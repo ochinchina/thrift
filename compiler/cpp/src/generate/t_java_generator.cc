@@ -134,7 +134,7 @@ public:
   void generate_service_client    (t_service* tservice);
   void generate_service_async_client(t_service* tservice);
   void generate_service_server    (t_service* tservice);
-  void generate_process_function  (t_service* tservice, t_function* tfunction);
+  void generate_process_function  (t_service* tservice, t_function* tfunction, bool async = false );
 
   void generate_java_union(t_struct* tstruct);
   void generate_union_constructor(ofstream& out, t_struct* tstruct);
@@ -252,9 +252,9 @@ public:
   std::string base_type_name(t_base_type* tbase, bool in_container=false);
   std::string declare_field(t_field* tfield, bool init=false);
   std::string function_signature(t_function* tfunction, std::string prefix="");
-  std::string function_signature_async(t_function* tfunction, bool use_base_method = false, std::string prefix="");
+  std::string function_signature_async(t_function* tfunction, bool use_base_method = false, bool async_server = false, std::string prefix="");
   std::string argument_list(t_struct* tstruct, bool include_types = true);
-  std::string async_function_call_arglist(t_function* tfunc, bool use_base_method = true, bool include_types = true);
+  std::string async_function_call_arglist(t_function* tfunc, bool use_base_method = true, bool async_server = false, bool include_types = true);
   std::string async_argument_list(t_function* tfunct, t_struct* tstruct, t_type* ttype, bool include_types=false);
   std::string type_to_enum(t_type* ttype);
   std::string get_enum_class_name(t_type* type);
@@ -2208,20 +2208,28 @@ void t_java_generator::generate_service_interface(t_service* tservice) {
 void t_java_generator::generate_service_async_interface(t_service* tservice) {
   string extends = "";
   string extends_iface = "";
+  string async_extends_iface = "";
+  ostringstream serverAsyncInf;
   if (tservice->get_extends() != NULL) {
     extends = type_name(tservice->get_extends());
-    extends_iface = " extends " + extends + " .AsyncIface";
+    extends_iface = " extends " + extends + ".AsyncIface";
+    async_extends_iface = " extends " + extends + ".AsyncServIface";
   }
 
   f_service_ << indent() << "public interface AsyncIface" << extends_iface << " {" << endl << endl;
+  serverAsyncInf<< indent() << "public interface AsyncServIface" <<  async_extends_iface << " {" << endl << endl;
   indent_up();
   vector<t_function*> functions = tservice->get_functions();
   vector<t_function*>::iterator f_iter;
   for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
-    indent(f_service_) << "public " << function_signature_async(*f_iter, true) << " throws org.apache.thrift.TException;" << endl << endl;
+    indent(f_service_) << "public " << function_signature_async(*f_iter, true, false ) << " throws org.apache.thrift.TException;" << endl << endl;
+    serverAsyncInf << "public " << function_signature_async(*f_iter, false, true) << " throws org.apache.thrift.TException;" << endl << endl;
   }
   indent_down();
   f_service_ << indent() << "}" << endl << endl;
+  serverAsyncInf << "}" << endl << endl;
+  
+  f_service_ << indent() << serverAsyncInf.str() << endl;
 }
 
 /**
@@ -2413,19 +2421,30 @@ void t_java_generator::generate_service_async_client(t_service* tservice) {
 
   // Factory method
   indent(f_service_) << "public static class Factory implements org.apache.thrift.async.TAsyncClientFactory<AsyncClient> {" << endl;
-  indent(f_service_) << "  private org.apache.thrift.async.TAsyncClientManager clientManager;" << endl;
+  //indent(f_service_) << "  private org.apache.thrift.async.TAsyncClientManager clientManager;" << endl;
   indent(f_service_) << "  private org.apache.thrift.protocol.TProtocolFactory protocolFactory;" << endl;
-  indent(f_service_) << "  public Factory(org.apache.thrift.async.TAsyncClientManager clientManager, org.apache.thrift.protocol.TProtocolFactory protocolFactory) {" << endl;
-  indent(f_service_) << "    this.clientManager = clientManager;" << endl; 
+  //indent(f_service_) << "  public Factory(org.apache.thrift.async.TAsyncClientManager clientManager, org.apache.thrift.protocol.TProtocolFactory protocolFactory) {" << endl;
+  indent(f_service_) << "  public Factory(org.apache.thrift.protocol.TProtocolFactory protocolFactory) {" << endl;
+  //indent(f_service_) << "    this.clientManager = clientManager;" << endl; 
   indent(f_service_) << "    this.protocolFactory = protocolFactory;" << endl;
   indent(f_service_) << "  }" << endl;
   indent(f_service_) << "  public AsyncClient getAsyncClient(org.apache.thrift.transport.TNonblockingTransport transport) {" << endl;
-  indent(f_service_) << "    return new AsyncClient(protocolFactory, clientManager, transport);" << endl;
+  //indent(f_service_) << "    return new AsyncClient(protocolFactory, clientManager, transport);" << endl;
+  indent(f_service_) << "    return new AsyncClient(protocolFactory, transport);" << endl;
+  indent(f_service_) << "  }" << endl;
+  indent(f_service_) << "  public AsyncClient getAsyncClient(org.apache.thrift.transport.TNonblockingTransport transport, long timeout) {" << endl;
+  //indent(f_service_) << "    return new AsyncClient(protocolFactory, clientManager, transport);" << endl;
+  indent(f_service_) << "    return new AsyncClient(protocolFactory, transport, timeout );" << endl;
   indent(f_service_) << "  }" << endl;
   indent(f_service_) << "}" << endl << endl;
 
-  indent(f_service_) << "public AsyncClient(org.apache.thrift.protocol.TProtocolFactory protocolFactory, org.apache.thrift.async.TAsyncClientManager clientManager, org.apache.thrift.transport.TNonblockingTransport transport) {" << endl;
-  indent(f_service_) << "  super(protocolFactory, clientManager, transport);" << endl;
+  //indent(f_service_) << "public AsyncClient(org.apache.thrift.protocol.TProtocolFactory protocolFactory, org.apache.thrift.async.TAsyncClientManager clientManager, org.apache.thrift.transport.TNonblockingTransport transport) {" << endl;
+  //indent(f_service_) << "  super(protocolFactory, clientManager, transport);" << endl;
+  indent(f_service_) << "public AsyncClient(org.apache.thrift.protocol.TProtocolFactory protocolFactory, org.apache.thrift.transport.TNonblockingTransport transport) {" << endl;
+  indent(f_service_) << "  super(protocolFactory, transport);" << endl;
+  indent(f_service_) << "}" << endl << endl;
+  indent(f_service_) << "public AsyncClient(org.apache.thrift.protocol.TProtocolFactory protocolFactory, org.apache.thrift.transport.TNonblockingTransport transport, long timeout) {" << endl;
+  indent(f_service_) << "  super(protocolFactory, transport, timeout);" << endl;
   indent(f_service_) << "}" << endl << endl;
 
   // Generate client method implementations
@@ -2443,17 +2462,18 @@ void t_java_generator::generate_service_async_client(t_service* tservice) {
     string result_name = (*f_iter)->get_name() + "_result";
 
     // Main method body   
-    indent(f_service_) << "public " << function_signature_async(*f_iter, false) << " throws org.apache.thrift.TException {" << endl;
-    indent(f_service_) << "  checkReady();" << endl;
+    indent(f_service_) << "public " << function_signature_async(*f_iter, false, false ) << " throws org.apache.thrift.TException {" << endl;
+    //indent(f_service_) << "  checkReady();" << endl;
     indent(f_service_) << "  " << funclassname << " method_call = new " + funclassname + "(" << async_argument_list(*f_iter, arg_struct, ret_type) << ", this, ___protocolFactory, ___transport);" << endl;
-    indent(f_service_) << "  this.___currentMethod = method_call;" << endl;
-    indent(f_service_) << "  ___manager.call(method_call);" << endl;
+    //indent(f_service_) << "  this.___currentMethod = method_call;" << endl;
+    //indent(f_service_) << "  ___manager.call(method_call);" << endl;
+    indent(f_service_) << "  call(method_call);" << endl;
     indent(f_service_) << "}" << endl;
 
     f_service_ << endl;
 
     // TAsyncMethod object for this function call
-    indent(f_service_) << "public static class " + funclassname + " extends org.apache.thrift.async.TAsyncMethodCall {" << endl;
+    indent(f_service_) << "public static class " + funclassname + " extends org.apache.thrift.async.TAsyncMethodCall<" + funclassname +"> {" << endl;
     indent_up();
 
     // Member variables
@@ -2481,7 +2501,8 @@ void t_java_generator::generate_service_async_client(t_service* tservice) {
     // Serialize request
     // NOTE we are leaving seqid as 0, for now (see above)
     f_service_ << 
-      indent() << "prot.writeMessageBegin(new org.apache.thrift.protocol.TMessage(\"" << funname << "\", org.apache.thrift.protocol.TMessageType.CALL, 0));" << endl <<
+      ///indent() << "prot.writeMessageBegin(new org.apache.thrift.protocol.TMessage(\"" << funname << "\", org.apache.thrift.protocol.TMessageType.CALL, 0));" << endl <<
+      indent() << "prot.writeMessageBegin(new org.apache.thrift.protocol.TMessage(\"" << funname << "\", org.apache.thrift.protocol.TMessageType.CALL, getSequenceId()));" << endl <<
       indent() << args_name << " args = new " << args_name << "();" << endl;
 
     for (fld_iter = fields.begin(); fld_iter != fields.end(); ++fld_iter) {
@@ -2504,18 +2525,45 @@ void t_java_generator::generate_service_async_client(t_service* tservice) {
     f_service_ << "org.apache.thrift.TException {" << endl;
 
     indent_up();
-    f_service_ <<
-      indent() << "if (getState() != org.apache.thrift.async.TAsyncMethodCall.State.RESPONSE_READ) {" << endl <<
-      indent() << "  throw new IllegalStateException(\"Method call not finished!\");" << endl <<
-      indent() << "}" << endl <<
-      indent() << "org.apache.thrift.transport.TMemoryInputTransport memoryTransport = new org.apache.thrift.transport.TMemoryInputTransport(getFrameBuffer().array());" << endl <<
-      indent() << "org.apache.thrift.protocol.TProtocol prot = client.getProtocolFactory().getProtocol(memoryTransport);" << endl;
+    //f_service_ <<
+      //indent() << "if (getState() != org.apache.thrift.async.TAsyncMethodCall.State.RESPONSE_READ) {" << endl <<
+      //indent() << "  throw new IllegalStateException(\"Method call not finished!\");" << endl <<
+      //indent() << "}" << endl <<
+      //indent() << "org.apache.thrift.transport.TMemoryInputTransport memoryTransport = new org.apache.thrift.transport.TMemoryInputTransport(getFrameBuffer().array());" << endl <<
+      //indent() << "org.apache.thrift.protocol.TProtocol prot = client.getProtocolFactory().getProtocol(memoryTransport);" << endl;
     if (!(*f_iter)->is_oneway()) {
+      f_service_ <<
+      	indent() << funname << "_result result=" << "new " << funname << "_result();" << endl <<
+		indent() << "super.getResult( result );" << endl;
       indent(f_service_);
+      
       if (!ret_type->is_void()) {
-        f_service_ << "return "; 
+        f_service_ << "if( result.isSetSuccess() ) {" << endl <<
+			indent() << "  return result.success;" << endl <<
+			indent() << "}" << endl;
+		
+		
+        //f_service_ << "return "; 
       }
-      f_service_ << "(new Client(prot)).recv_" + funname + "();" << endl;
+      
+      t_struct* xs = (*f_iter)->get_xceptions();
+      const std::vector<t_field*>& xceptions = xs->get_members();
+      vector<t_field*>::const_iterator x_iter;
+      for (x_iter = xceptions.begin(); x_iter != xceptions.end(); ++x_iter) {
+        f_service_ <<
+          indent() << "if (result." << (*x_iter)->get_name() << " != null) {" << endl <<
+          indent() << "  throw result." << (*x_iter)->get_name() << ";" << endl <<
+          indent() << "}" << endl;
+      } 
+      
+      // If you get here it's an exception, unless a void function
+      if ((*f_iter)->get_returntype()->is_void()) {
+        //indent(f_service_) << "return;" << endl;
+      } else {
+        f_service_ <<
+          indent() << "throw new org.apache.thrift.TApplicationException(org.apache.thrift.TApplicationException.MISSING_RESULT, \"" << (*f_iter)->get_name() << " failed: unknown result\");" << endl;
+      }
+      //f_service_ << "(new Client(prot)).recv_" + funname + "();" << endl;
     }
 
     // Close function
@@ -2545,11 +2593,14 @@ void t_java_generator::generate_service_server(t_service* tservice) {
   // Extends stuff
   string extends = "";
   string extends_processor = "";
+  string async_extends_processor = "";
   if (tservice->get_extends() == NULL) {
     extends_processor = "org.apache.thrift.TBaseProcessor<I>";
+    async_extends_processor = "org.apache.thrift.TBaseProcessor<I>";
   } else {
     extends = type_name(tservice->get_extends());
     extends_processor = extends + ".Processor";
+    async_extends_processor = extends + ".AsyncProcessor";
   }
 
   // Generate the header portion
@@ -2560,14 +2611,14 @@ void t_java_generator::generate_service_server(t_service* tservice) {
   indent(f_service_) << "private static final Logger LOGGER = LoggerFactory.getLogger(Processor.class.getName());" << endl;
 
   indent(f_service_) << "public Processor(I iface) {" << endl;
-  indent(f_service_) << "  super(iface, getProcessMap(new HashMap<String, org.apache.thrift.ProcessFunction<I, ? extends org.apache.thrift.TBase>>()));" << endl;
+  indent(f_service_) << "  super(iface, getProcessMap(new HashMap<String, org.apache.thrift.ProcessFunction<I, ? extends org.apache.thrift.TBase, ? extends org.apache.thrift.TBase>>()));" << endl;
   indent(f_service_) << "}" << endl << endl;
 
-  indent(f_service_) << "protected Processor(I iface, Map<String,  org.apache.thrift.ProcessFunction<I, ? extends  org.apache.thrift.TBase>> processMap) {" << endl;
+  indent(f_service_) << "protected Processor(I iface, Map<String,  org.apache.thrift.ProcessFunction<I, ? extends  org.apache.thrift.TBase, ? extends org.apache.thrift.TBase>> processMap) {" << endl;
   indent(f_service_) << "  super(iface, getProcessMap(processMap));" << endl;
   indent(f_service_) << "}" << endl << endl;
 
-  indent(f_service_) << "private static <I extends Iface> Map<String,  org.apache.thrift.ProcessFunction<I, ? extends  org.apache.thrift.TBase>> getProcessMap(Map<String,  org.apache.thrift.ProcessFunction<I, ? extends  org.apache.thrift.TBase>> processMap) {" << endl;
+  indent(f_service_) << "private static <I extends Iface> Map<String,  org.apache.thrift.ProcessFunction<I, ? extends  org.apache.thrift.TBase, ? extends org.apache.thrift.TBase>> getProcessMap(Map<String,  org.apache.thrift.ProcessFunction<I, ? extends  org.apache.thrift.TBase, ? extends org.apache.thrift.TBase>> processMap) {" << endl;
   indent_up();
   for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
     indent(f_service_) << "processMap.put(\"" << (*f_iter)->get_name() << "\", new " << (*f_iter)->get_name() << "());" << endl;
@@ -2580,7 +2631,38 @@ void t_java_generator::generate_service_server(t_service* tservice) {
   for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
     generate_process_function(tservice, *f_iter);
   }
+  
+  indent_down();
+  indent(f_service_) << "}" << endl << endl;
 
+  //generate async processor
+  indent(f_service_) <<
+    "public static class AsyncProcessor<I extends AsyncServIface> extends " << async_extends_processor << " implements org.apache.thrift.TProcessor {" << endl;
+  indent_up();
+  indent(f_service_) << "private static final Logger LOGGER = LoggerFactory.getLogger(AsyncProcessor.class.getName());" << endl;
+
+  indent(f_service_) << "public AsyncProcessor(I iface) {" << endl;
+  indent(f_service_) << "  super(iface, getProcessMap(new HashMap<String, org.apache.thrift.ProcessFunction<I, ? extends org.apache.thrift.TBase, ? extends org.apache.thrift.TBase>>()));" << endl;
+  indent(f_service_) << "}" << endl << endl;
+
+  indent(f_service_) << "protected AsyncProcessor(I iface, Map<String,  org.apache.thrift.ProcessFunction<I, ? extends  org.apache.thrift.TBase, ? extends org.apache.thrift.TBase>> processMap) {" << endl;
+  indent(f_service_) << "  super(iface, getProcessMap(processMap));" << endl;
+  indent(f_service_) << "}" << endl << endl;
+
+  indent(f_service_) << "private static <I extends AsyncServIface> Map<String,  org.apache.thrift.ProcessFunction<I, ? extends  org.apache.thrift.TBase, ? extends org.apache.thrift.TBase>> getProcessMap(Map<String,  org.apache.thrift.ProcessFunction<I, ? extends  org.apache.thrift.TBase, ? extends org.apache.thrift.TBase>> processMap) {" << endl;
+  indent_up();
+  for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
+    indent(f_service_) << "processMap.put(\"" << (*f_iter)->get_name() << "\", new " << (*f_iter)->get_name() << "());" << endl;
+  }
+  indent(f_service_) << "return processMap;" << endl;
+  indent_down();
+  indent(f_service_) << "}" << endl << endl;
+    // Generate the process subfunctions
+  for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
+    generate_process_function(tservice, *f_iter, true );
+  }
+  
+  
   indent_down();
   indent(f_service_) << "}" << endl << endl;
 }
@@ -2617,7 +2699,8 @@ void t_java_generator::generate_function_helpers(t_function* tfunction) {
  * @param tfunction The function to write a dispatcher for
  */
 void t_java_generator::generate_process_function(t_service* tservice,
-                                                 t_function* tfunction) {
+                                                 t_function* tfunction,
+												 bool async ) {
   string argsname = tfunction->get_name() + "_args";
   string resultname = tfunction->get_name() + "_result";
   if (tfunction->is_oneway()) {
@@ -2626,22 +2709,41 @@ void t_java_generator::generate_process_function(t_service* tservice,
 
   (void) tservice;
   // Open class
-  indent(f_service_) <<
-    "private static class " << tfunction->get_name() << "<I extends Iface> extends org.apache.thrift.ProcessFunction<I, " << argsname << "> {" << endl;
+  if( async ) {
+	  indent(f_service_) <<
+	    "private static class " << tfunction->get_name() << "<I extends AsyncServIface> extends org.apache.thrift.ProcessFunction<I, " << argsname << ", " << resultname <<" > {" << endl;
+ 
+  } else {
+	  indent(f_service_) <<
+	    "private static class " << tfunction->get_name() << "<I extends Iface> extends org.apache.thrift.ProcessFunction<I, " << argsname << "," << resultname << "> {" << endl;
+    }
   indent_up();
 
   indent(f_service_) << "public " << tfunction->get_name() << "() {" << endl;
-  indent(f_service_) << "  super(\"" << tfunction->get_name() << "\");" << endl;
+  
+  if( async ) {
+  	indent(f_service_) << "  super(\"" << tfunction->get_name() << "\", true );" << endl;
+  } else {
+  	indent(f_service_) << "  super(\"" << tfunction->get_name() << "\");" << endl;
+  }
   indent(f_service_) << "}" << endl << endl;
 
   indent(f_service_) << "protected " << argsname << " getEmptyArgsInstance() {" << endl;
   indent(f_service_) << "  return new " << argsname << "();" << endl;
   indent(f_service_) << "}" << endl << endl;
+  
+  ostringstream asyncGetResult;
+  
+  asyncGetResult << "protected void getResult( I iface, " << argsname << " args" ;
+    
 
   indent(f_service_) << "protected " << resultname << " getResult(I iface, " << argsname << " args) throws org.apache.thrift.TException {" << endl;
   indent_up();
   if (!tfunction->is_oneway()) {
-    indent(f_service_) << resultname << " result = new " << resultname << "();" << endl;
+    if( !async ) indent(f_service_) << resultname << " result = new " << resultname << "();" << endl;
+    asyncGetResult << ", org.apache.thrift.async.AsyncMethodCallback<" << resultname << "> resultCb ) throws org.apache.thrift.TException {" << endl; 
+  } else {
+  	asyncGetResult << ", org.apache.thrift.async.AsyncMethodCallback<org.apache.thrift.TBase> resultCb) throws org.apache.thrift.TException {" << endl;
   }
 
   t_struct* xs = tfunction->get_xceptions();
@@ -2650,7 +2752,7 @@ void t_java_generator::generate_process_function(t_service* tservice,
 
   // Try block for a function with exceptions
   if (xceptions.size() > 0) {
-    f_service_ << indent() << "try {" << endl;
+    if( !async ) f_service_ << indent() << "try {" << endl;
     indent_up();
   }
 
@@ -2661,26 +2763,45 @@ void t_java_generator::generate_process_function(t_service* tservice,
   f_service_ << indent();
 
   if (!tfunction->is_oneway() && !tfunction->get_returntype()->is_void()) {
-    f_service_ << "result.success = ";
+    if( !async ) f_service_ << "result.success = ";
   }
-  f_service_ << "iface." << tfunction->get_name() << "(";
+  if( !async ) f_service_ << "iface." << tfunction->get_name() << "(";
+  if( async ) asyncGetResult << "\t\tiface."  << tfunction->get_name() << "(";
   bool first = true;
   for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
     if (first) {
       first = false;
     } else {
-      f_service_ << ", ";
+      if( async )
+	  	asyncGetResult << ", ";
+	  else f_service_ << ", ";
+      
     }
-    f_service_ << "args." << (*f_iter)->get_name();
+    if( async ) {
+    	asyncGetResult << "args." << (*f_iter)->get_name();
+	} else {
+		f_service_ << "args." << (*f_iter)->get_name();
+	}
   }
-  f_service_ << ");" << endl;
+  
+  if( async ) {
+	  if( first ) {
+    	if( tfunction->is_oneway() )
+    		asyncGetResult << ");" << endl;
+	  	else asyncGetResult << " resultCb);" << endl;
+	  } else {
+	    asyncGetResult << ", resultCb);" << endl;
+	  }
+  } else {
+  	f_service_ << ");" << endl;
+  }
 
   // Set isset on success field
   if (!tfunction->is_oneway() && !tfunction->get_returntype()->is_void() && !type_can_be_null(tfunction->get_returntype())) {
-    indent(f_service_) << "result.set" << get_cap_name("success") << get_cap_name("isSet") << "(true);" << endl;
+    if( !async ) indent(f_service_) << "result.set" << get_cap_name("success") << get_cap_name("isSet") << "(true);" << endl;
   }
 
-  if (!tfunction->is_oneway() && xceptions.size() > 0) {
+  if (!async && !tfunction->is_oneway() && xceptions.size() > 0) {
     indent_down();
     f_service_ << indent() << "}";
     for (x_iter = xceptions.begin(); x_iter != xceptions.end(); ++x_iter) {
@@ -2698,14 +2819,18 @@ void t_java_generator::generate_process_function(t_service* tservice,
     f_service_ << endl;
   }
 
-  if (tfunction->is_oneway()) {
+  if (async || tfunction->is_oneway()) {
     indent(f_service_) << "return null;" << endl;
   } else {
     indent(f_service_) << "return result;" << endl;
   }
+  
   indent_down();
-  indent(f_service_) << "}";
+  indent(f_service_) << "}" << endl;
+  asyncGetResult << "\t\t}" << endl;
 
+  indent( f_service_ ) << asyncGetResult.str() << endl;
+  
   // Close function
   f_service_ << endl;
 
@@ -2713,6 +2838,9 @@ void t_java_generator::generate_process_function(t_service* tservice,
   indent_down();
   f_service_ << indent() << "}" << endl << endl;
 }
+
+
+
 
 /**
  * Deserializes a field of any type.
@@ -3301,20 +3429,25 @@ string t_java_generator::function_signature(t_function* tfunction,
  * @params tfunction Function definition
  * @return String of rendered function definition
  */
-string t_java_generator::function_signature_async(t_function* tfunction, bool use_base_method, string prefix) {
-  std::string arglist = async_function_call_arglist(tfunction, use_base_method, true);
+string t_java_generator::function_signature_async(t_function* tfunction, bool use_base_method, bool async_server, string prefix) {
+  std::string arglist = async_function_call_arglist(tfunction, use_base_method, async_server, true);
 
   std::string ret_type = "";
   if (use_base_method) {
     ret_type += "AsyncClient.";
   }
-  ret_type += tfunction->get_name() + "_call";
+  
+  if( async_server ) {
+  	ret_type += tfunction->get_name() + "_result";
+  } else {
+  	ret_type += tfunction->get_name() + "_call";
+  }
 
   std::string result = prefix + "void " + tfunction->get_name() + "(" + arglist + ")";
   return result;
 }
 
-string t_java_generator::async_function_call_arglist(t_function* tfunc, bool use_base_method, bool include_types) {
+string t_java_generator::async_function_call_arglist(t_function* tfunc, bool use_base_method, bool async_server, bool include_types) {
   std::string arglist = "";
   if (tfunc->get_arglist()->get_members().size() > 0) {
     arglist = argument_list(tfunc->get_arglist(), include_types) + ", ";
@@ -3324,13 +3457,18 @@ string t_java_generator::async_function_call_arglist(t_function* tfunc, bool use
   if (use_base_method) {
     ret_type += "AsyncClient.";
   }
-  ret_type += tfunc->get_name() + "_call";
-
-  if (include_types) {
-    arglist += "org.apache.thrift.async.AsyncMethodCallback<" + ret_type + "> ";
+  if( async_server ) {
+  	if( !tfunc->is_oneway() ) {
+  		ret_type += tfunc->get_name() + "_result";
+  	}
+  } else {
+  	ret_type += tfunc->get_name() + "_call";
   }
-  arglist += "resultHandler";
 
+  if (include_types && !ret_type.empty() ) {
+    arglist += "org.apache.thrift.async.AsyncMethodCallback<" + ret_type + "> ";
+  	arglist += "resultHandler";
+  } 
   return arglist;
 }
 

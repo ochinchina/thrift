@@ -2119,6 +2119,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
     extends_client = ", public " + extends + style + client_suffix;
   }
 
+  std::ostringstream async_client_out;
   // Generate the header portion
   f_header_ <<
     template_header <<
@@ -2127,6 +2128,23 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
     extends_client << " {" << endl <<
     " public:" << endl;
 
+  if( style == "Cob" ) { 
+  	async_client_out << "class " << service_name_ << "AsyncClient";
+  	if( !extends_client.empty() ) {
+  		async_client_out << ": public " << type_name(tservice->get_extends()) << "AsyncClient"; 
+	}
+	async_client_out << "{" << endl;
+	async_client_out << "public:" << endl;
+	async_client_out << "\t" << service_name_ << "AsyncClient(boost::shared_ptr< ::apache::thrift::async::TAsyncChannel> channel, boost::shared_ptr< ::apache::thrift::protocol::TProtocolFactory> protocolFactory):" << endl;
+	if( extends_client.empty() ) {
+		async_client_out << "\tchannel_( channel )," << endl;
+		async_client_out << "\tprotocolFactory_( protocolFactory ){" << endl;
+		async_client_out << "\t}" << endl;
+	} else {
+		async_client_out << type_name(tservice->get_extends()) << "AsyncClient( channel, protocolFactory)" << endl << "\t{" << endl << "\t}" << endl;
+	}
+  }
+   
   indent_up();
   if (style != "Cob") {
     f_header_ <<
@@ -2247,7 +2265,45 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
           &noargs);
       indent(f_header_) << function_signature(&recv_function, "") << ";" << endl;
     }
+    
+    if( ifstyle == "CobCl") {
+    	t_function* tfunction = *f_iter;
+    	t_struct* arglist = tfunction->get_arglist();
+    	string cob_type = "(" + service_name_ + "CobClient&)";
+    	async_client_out << "\tvoid " << tfunction->get_name() << "(std::tr1::function<void" + cob_type + "> cob"
+    			<< argument_list(arglist, true, true) + "){" << endl;
+    	async_client_out << "\t\tboost::shared_ptr<" << service_name_ << "CobClient> client( new " << service_name_ << "CobClient(channel_, protocolFactory_.get() ) );" << endl;
+    	async_client_out << "\t\tclient->" << tfunction->get_name() << "( std::tr1::bind(&" << service_name_ << "AsyncClient::processResult, client, std::tr1::placeholders::_1, cob)";
+    	const vector<t_field*>& fields = arglist->get_members();
+    	if( !fields.empty() ) {    		
+			for( int i = 0, n = fields.size(); i < n; i++ ) {
+				async_client_out << ",";
+				async_client_out << fields[i]->get_name();
+			}
+		}
+		async_client_out << ");" << endl;
+		async_client_out << "\t}"<<endl;
+		
+		
+    	
+	}
   }
+  
+  if( ifstyle == "CobCl" ) {
+  	async_client_out << "private:" << endl;
+	async_client_out << "\tstatic void processResult( boost::shared_ptr< " << service_name_ << "CobClient > client, " << service_name_ << "CobClient*, std::tr1::function<void(" << service_name_ << "CobClient&)> cob ) {" << endl;
+	async_client_out << "\t\tcob( *client );" << endl;
+	async_client_out << "\t}" << endl;
+		
+	if( extends_client.empty() ) {
+		async_client_out << "protected:" << endl;
+		async_client_out << "\tboost::shared_ptr< ::apache::thrift::async::TAsyncChannel> channel_;" << endl;
+		async_client_out << "\tboost::shared_ptr< ::apache::thrift::protocol::TProtocolFactory> protocolFactory_;" << endl;
+	}
+  	async_client_out << "};" << endl;
+  }
+  
+  
   indent_down();
 
   if (extends.empty()) {
@@ -2273,6 +2329,8 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
   f_header_ <<
     "};" << endl <<
     endl;
+
+  f_header_ <<  async_client_out.str() << endl;
 
   if (gen_templates_) {
     // Output a backwards compatibility typedef using
