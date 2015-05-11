@@ -25,6 +25,7 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.SocketException;
 import java.nio.channels.ClosedChannelException;
+import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
@@ -37,7 +38,7 @@ import org.slf4j.LoggerFactory;
  * Wrapper around ServerSocketChannel
  */
 public class TNonblockingServerSocket extends TNonblockingServerTransport {
-  private static final Logger LOGGER = LoggerFactory.getLogger(TNonblockingServerTransport.class.getName());
+  private static final Logger LOGGER = LoggerFactory.getLogger(TNonblockingServerSocket.class.getName());
 
   /**
    * This channel is where all the nonblocking magic happens.
@@ -53,6 +54,7 @@ public class TNonblockingServerSocket extends TNonblockingServerTransport {
    * Timeout for client sockets from accept
    */
   private int clientTimeout_ = 0;
+  private TSelector selector = new TSelector();
 
   /**
    * Creates just a port listening server socket
@@ -84,6 +86,7 @@ public class TNonblockingServerSocket extends TNonblockingServerTransport {
       serverSocket_.setReuseAddress(true);
       // Bind to listening port
       serverSocket_.bind(bindAddr);
+      
     } catch (IOException ioe) {
       serverSocket_ = null;
       throw new TTransportException("Could not create ServerSocket on address " + bindAddr.toString() + ".");
@@ -111,7 +114,7 @@ public class TNonblockingServerSocket extends TNonblockingServerTransport {
         return null;
       }
 
-      TNonblockingSocket tsocket = new TNonblockingSocket(socketChannel);
+      TNonblockingSocket tsocket = new TNonblockingSocket(socketChannel, null );
       tsocket.setTimeout(clientTimeout_);
       return tsocket;
     } catch (IOException iox) {
@@ -119,16 +122,7 @@ public class TNonblockingServerSocket extends TNonblockingServerTransport {
     }
   }
 
-  public void registerSelector(Selector selector) {
-    try {
-      // Register the server socket channel, indicating an interest in
-      // accepting new connections
-      serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
-    } catch (ClosedChannelException e) {
-      // this shouldn't happen, ideally...
-      // TODO: decide what to do with this.
-    }
-  }
+ 
 
   public void close() {
     if (serverSocket_ != null) {
@@ -146,5 +140,28 @@ public class TNonblockingServerSocket extends TNonblockingServerTransport {
     // that it is safe to do this from a different thread context
     close();
   }
+
+@Override
+public void accept( final TransportAcceptCallback acceptCallback) {
+	selector.register(serverSocketChannel, SelectionKey.OP_ACCEPT, new TSelector.ChannelOperator() {
+		
+		@Override
+		public void doOperation() {
+			try {				
+				SocketChannel socketChannel = serverSocketChannel.accept();
+				if( socketChannel != null ) {
+					TNonblockingSocket tsocket = new TNonblockingSocket(socketChannel, selector );
+				    tsocket.setTimeout(clientTimeout_);
+				    try {
+				    	acceptCallback.accepted(tsocket);
+				    }catch( Exception ex ) {				    	
+				    }
+				}
+			}catch( Exception ex ) {
+				selector.cancel( serverSocketChannel, SelectionKey.OP_ACCEPT, this);
+			}
+		}
+	}, -1 );
+}
 
 }

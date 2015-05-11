@@ -26,6 +26,9 @@ import java.nio.channels.Selector;
  * Server transport that can be operated in a nonblocking fashion.
  */
 public abstract class TNonblockingServerTransport extends TServerTransport {
+	public static interface TransportAcceptCallback {
+		void accepted( TNonblockingTransport transport );
+	}
 
-  public abstract void registerSelector(Selector selector);
+  public abstract void accept( TransportAcceptCallback acceptCallback );
 }

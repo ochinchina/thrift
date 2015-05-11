@@ -250,7 +250,7 @@
   </target>
 
   <target name="mvn.ant.tasks.download" depends="setup.init,mvn.ant.tasks.check,proxy" unless="mvn.ant.tasks.found">
-    <get src="${mvn.ant.task.url}/${mvn.ant.task.jar}" dest="${build.tools.dir}/${mvn.ant.task.jar}" usetimestamp="true"/>
+    <!--get src="${mvn.ant.task.url}/${mvn.ant.task.jar}" dest="${build.tools.dir}/${mvn.ant.task.jar}" usetimestamp="true"/-->
   </target>
 
   <target name="mvn.ant.tasks.check">

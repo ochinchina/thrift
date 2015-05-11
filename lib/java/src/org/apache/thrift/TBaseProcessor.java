@@ -10,9 +10,9 @@ import org.apache.thrift.protocol.TType;
 
 public abstract class TBaseProcessor<I> implements TProcessor {
   private final I iface;
-  private final Map<String,ProcessFunction<I, ? extends TBase>> processMap;
+  private final Map<String,ProcessFunction<I, ? extends TBase, ? extends TBase >> processMap;
 
-  protected TBaseProcessor(I iface, Map<String, ProcessFunction<I, ? extends TBase>> processFunctionMap) {
+  protected TBaseProcessor(I iface, Map<String, ProcessFunction<I, ? extends TBase, ? extends TBase>> processFunctionMap) {
     this.iface = iface;
     this.processMap = processFunctionMap;
   }

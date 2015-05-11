@@ -20,13 +20,23 @@
 
 package org.apache.thrift.server;
 
+import org.apache.thrift.TByteArrayOutputStream;
+import org.apache.thrift.TException;
+import org.apache.thrift.protocol.TProtocol;
+import org.apache.thrift.transport.TFramedTransport;
+import org.apache.thrift.transport.TIOStreamTransport;
+import org.apache.thrift.transport.TMemoryInputTransport;
 import org.apache.thrift.transport.TNonblockingServerTransport;
 import org.apache.thrift.transport.TNonblockingTransport;
+import org.apache.thrift.transport.TTransport;
 import org.apache.thrift.transport.TTransportException;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.util.Iterator;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * A nonblocking TServer implementation. This allows for fairness amongst all
@@ -49,11 +59,13 @@ public class TNonblockingServer extends AbstractNonblockingServer {
 
   // Flag for stopping the server
   private volatile boolean stopped_ = true;
+  private ExecutorService threadPool_ = null;
+  
 
-  private SelectAcceptThread selectAcceptThread_;
 
-  public TNonblockingServer(AbstractNonblockingServerArgs args) {
+  public TNonblockingServer(AbstractNonblockingServerArgs args, ExecutorService threadPool ) {
     super(args);
+    this.threadPool_ = threadPool;
   }
 
 
@@ -65,35 +77,54 @@ public class TNonblockingServer extends AbstractNonblockingServer {
    */
   @Override
   protected boolean startThreads() {
-    // start the selector
-    try {
-      selectAcceptThread_ = new SelectAcceptThread((TNonblockingServerTransport)serverTransport_);
-      stopped_ = false;
-      selectAcceptThread_.start();
-      return true;
-    } catch (IOException e) {
-      LOGGER.error("Failed to start selector thread!", e);
-      return false;
-    }
+	  ((TNonblockingServerTransport)serverTransport_).accept( new TNonblockingServerTransport.TransportAcceptCallback() {
+		
+		@Override
+		public void accepted(final TNonblockingTransport transport) {
+			try {
+				transport.startAsyncRead( new TNonblockingTransport.MessageListener() {
+					
+					@Override
+					public void msgReceived( final ByteBuffer msgBuf) {
+						if( threadPool_ == null ) {
+							requestInvoke( transport, msgBuf );
+						} else {
+							threadPool_.submit( new Runnable() {
+								@Override
+								public void run() {
+									requestInvoke( transport, msgBuf );
+								}
+							});
+						}
+					}
+
+					@Override
+					public void exception( Exception ex ) {
+						
+					}
+				});
+				
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+	});
+	this.stopped_ = false;
+    return true;
   }
 
   @Override
   protected void waitForShutdown() {
-    joinSelector();
-  }
-
-  /**
-   * Block until the selector thread exits.
-   */
-  protected void joinSelector() {
-    // wait until the selector thread exits
-    try {
-      selectAcceptThread_.join();
-    } catch (InterruptedException e) {
-      // for now, just silently ignore. technically this means we'll have less of
-      // a graceful shutdown as a result.
+    while( !stopped_ ) {
+    	try {
+			Thread.sleep( 1000 );
+		} catch (InterruptedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
     }
   }
+
 
   /**
    * Stop serving and shut everything down.
@@ -101,9 +132,7 @@ public class TNonblockingServer extends AbstractNonblockingServer {
   @Override
   public void stop() {
     stopped_ = true;
-    if (selectAcceptThread_ != null) {
-      selectAcceptThread_.wakeupSelector();
-    }
+    ((TNonblockingServerTransport)serverTransport_).close();
   }
 
   /**
@@ -111,125 +140,26 @@ public class TNonblockingServer extends AbstractNonblockingServer {
    * - invoke immediately inline, queue for separate execution, etc.
    */
   @Override
-  protected boolean requestInvoke(FrameBuffer frameBuffer) {
-    frameBuffer.invoke();
-    return true;
-  }
+  protected void requestInvoke(TNonblockingTransport transport, ByteBuffer frameBuffer) {
+	  TTransport inTrans = new TMemoryInputTransport( frameBuffer.array());
+      TProtocol inProt = inputProtocolFactory_.getProtocol(inTrans);
+      TByteArrayOutputStream response = new TByteArrayOutputStream();
+      
 
-
-  public boolean isStopped() {
-    return selectAcceptThread_.isStopped();
-  }
-
-  /**
-   * The thread that will be doing all the selecting, managing new connections
-   * and those that still need to be read.
-   */
-  protected class SelectAcceptThread extends AbstractSelectThread {
-
-    // The server transport on which new client transports will be accepted
-    private final TNonblockingServerTransport serverTransport;
-
-    /**
-     * Set up the thread that will handle the non-blocking accepts, reads, and
-     * writes.
-     */
-    public SelectAcceptThread(final TNonblockingServerTransport serverTransport)
-    throws IOException {
-      this.serverTransport = serverTransport;
-      serverTransport.registerSelector(selector);
-    }
-
-    public boolean isStopped() {
-      return stopped_;
-    }
-
-    /**
-     * The work loop. Handles both selecting (all IO operations) and managing
-     * the selection preferences of all existing connections.
-     */
-    public void run() {
       try {
-        while (!stopped_) {
-          select();
-          processInterestChanges();
-        }
-        for (SelectionKey selectionKey : selector.keys()) {
-          cleanupSelectionKey(selectionKey);
-        }
+    	  TProtocol outProt = outputProtocolFactory_.getProtocol( outputTransportFactory_.getTransport(new TIOStreamTransport(response )) );
+        processorFactory_.getProcessor(inTrans).process(inProt, outProt);
+        transport.asyncWrite( ByteBuffer.wrap( response.toByteArray() ) ); 
       } catch (Throwable t) {
-        LOGGER.error("run() exiting due to uncaught error", t);
-      } finally {
-        stopped_ = true;
+    	  t.printStackTrace();
+        LOGGER.error("Unexpected throwable while invoking!", t);
       }
-    }
+  }
 
-    /**
-     * Select and process IO events appropriately:
-     * If there are connections to be accepted, accept them.
-     * If there are existing connections with data waiting to be read, read it,
-     * buffering until a whole frame has been read.
-     * If there are any pending responses, buffer them until their target client
-     * is available, and then send the data.
-     */
-    private void select() {
-      try {
-        // wait for io events.
-        selector.select();
 
-        // process the io events we received
-        Iterator<SelectionKey> selectedKeys = selector.selectedKeys().iterator();
-        while (!stopped_ && selectedKeys.hasNext()) {
-          SelectionKey key = selectedKeys.next();
-          selectedKeys.remove();
+public boolean isStopped() {
+	  return stopped_;
+  }
 
-          // skip if not valid
-          if (!key.isValid()) {
-            cleanupSelectionKey(key);
-            continue;
-          }
-
-          // if the key is marked Accept, then it has to be the server
-          // transport.
-          if (key.isAcceptable()) {
-            handleAccept();
-          } else if (key.isReadable()) {
-            // deal with reads
-            handleRead(key);
-          } else if (key.isWritable()) {
-            // deal with writes
-            handleWrite(key);
-          } else {
-            LOGGER.warn("Unexpected state in select! " + key.interestOps());
-          }
-        }
-      } catch (IOException e) {
-        LOGGER.warn("Got an IOException while selecting!", e);
-      }
-    }
-
-    /**
-     * Accept a new connection.
-     */
-    private void handleAccept() throws IOException {
-      SelectionKey clientKey = null;
-      TNonblockingTransport client = null;
-      try {
-        // accept the connection
-        client = (TNonblockingTransport)serverTransport.accept();
-        clientKey = client.registerSelector(selector, SelectionKey.OP_READ);
-
-        // add this key to the map
-        FrameBuffer frameBuffer = new FrameBuffer(client, clientKey,
-          SelectAcceptThread.this);
-        clientKey.attach(frameBuffer);
-      } catch (TTransportException tte) {
-        // something went wrong accepting.
-        LOGGER.warn("Exception trying to accept!", tte);
-        tte.printStackTrace();
-        if (clientKey != null) cleanupSelectionKey(clientKey);
-        if (client != null) client.close();
-      }
-    }
-  } // SelectAcceptThread
+  
 }

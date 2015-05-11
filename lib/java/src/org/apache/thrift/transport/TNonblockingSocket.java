@@ -26,6 +26,7 @@ import java.net.Socket;
 import java.net.SocketAddress;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
+import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
@@ -47,8 +48,14 @@ public class TNonblockingSocket extends TNonblockingTransport {
 
   private final SocketChannel socketChannel_;
 
-  public TNonblockingSocket(String host, int port) throws IOException {
-    this(host, port, 0);
+  private TSelector selector_;
+  private ByteBuffer frameSizeBuffer = ByteBuffer.allocate(4);
+  private ByteBuffer frameBuffer = null;
+
+  
+
+  public TNonblockingSocket(String host, int port, TSelector selector) throws IOException {
+    this(host, port, 0, selector );
   }
 
   /**
@@ -58,8 +65,8 @@ public class TNonblockingSocket extends TNonblockingTransport {
    * @throws TTransportException
    * @throws IOException
    */
-  public TNonblockingSocket(String host, int port, int timeout) throws IOException {
-    this(SocketChannel.open(), timeout, new InetSocketAddress(host, port));
+  public TNonblockingSocket(String host, int port, int timeout, TSelector selector ) throws IOException {
+    this(SocketChannel.open(), timeout, new InetSocketAddress(host, port), selector );
   }
 
   /**
@@ -68,37 +75,31 @@ public class TNonblockingSocket extends TNonblockingTransport {
    * @param socketChannel Already created SocketChannel object
    * @throws IOException if there is an error setting up the streams
    */
-  public TNonblockingSocket(SocketChannel socketChannel) throws IOException {
-    this(socketChannel, 0, null);
+  public TNonblockingSocket(SocketChannel socketChannel, TSelector selector ) throws IOException {
+    this(socketChannel, 0, null, selector );
     if (!socketChannel.isConnected()) throw new IOException("Socket must already be connected");
   }
 
-  private TNonblockingSocket(SocketChannel socketChannel, int timeout, SocketAddress socketAddress)
+  private TNonblockingSocket(SocketChannel socketChannel, int timeout, SocketAddress socketAddress, TSelector selector )
       throws IOException {
     socketChannel_ = socketChannel;
     socketAddress_ = socketAddress;
 
-    // make it a nonblocking channel
-    socketChannel.configureBlocking(false);
 
     // set options
     Socket socket = socketChannel.socket();
     socket.setSoLinger(false, 0);
     socket.setTcpNoDelay(true);
     setTimeout(timeout);
+    if( socketAddress_ != null ) {
+    	socket.connect( socketAddress_ );
+    }
+    // make it a nonblocking channel
+    socketChannel.configureBlocking(false);
+    this.selector_ = selector;
   }
 
-  /**
-   * Register the new SocketChannel with our Selector, indicating
-   * we'd like to be notified when it's ready for I/O.
-   *
-   * @param selector
-   * @return the selection key for this socket.
-   */
-  public SelectionKey registerSelector(Selector selector, int interests) throws IOException {
-    return socketChannel_.register(selector, interests);
-  }
-
+ 
   /**
    * Sets the socket timeout, although this implementation never uses blocking operations so it is unused.
    *
@@ -197,14 +198,83 @@ public class TNonblockingSocket extends TNonblockingTransport {
     }
   }
 
-  /** {@inheritDoc} */
-  public boolean startConnect() throws IOException {
-    return socketChannel_.connect(socketAddress_);
-  }
 
-  /** {@inheritDoc} */
-  public boolean finishConnect() throws IOException {
-    return socketChannel_.finishConnect();
-  }
+
+	@Override
+	public void startAsyncRead( final MessageListener listener) throws IOException {
+		selector_.register( socketChannel_, SelectionKey.OP_READ, new TSelector.ChannelOperator() {
+			
+			@Override
+			public void doOperation() {
+				ByteBuffer frameBuf = readFrame();
+				if( frameBuf != null ) {
+					listener.msgReceived( frameBuf );
+				}
+				
+			}
+			
+		}, -1 );
+		
+	}
+	
+	
+
+	protected ByteBuffer readFrame() {
+			try {
+				if( frameSizeBuffer.remaining() != 0 ) {
+					socketChannel_.read( frameSizeBuffer );
+					if( frameSizeBuffer.remaining() == 0 ) {
+						int n = TFramedTransport.decodeFrameSize(frameSizeBuffer.array());
+						frameBuffer = ByteBuffer.allocate( n );
+						socketChannel_.read( frameBuffer );
+					}
+				} else {
+					socketChannel_.read( frameBuffer );
+				}
+				
+				if( frameSizeBuffer.remaining() == 0 && frameBuffer.remaining() == 0 ) {
+					//frameSizeBuffer = ByteBuffer.allocate( 4 );
+					frameSizeBuffer.limit( frameSizeBuffer.capacity() );
+					frameSizeBuffer.position( 0 );
+					return frameBuffer;
+				}
+			} catch (IOException e) {
+				selector_.cancel( socketChannel_, SelectionKey.OP_READ);
+				startConnect();
+				//e.printStackTrace();
+			}
+		
+		return null;
+		
+		
+	}
+
+	private void startConnect() {
+		// TODO Auto-generated method stub
+		
+	}
+	
+	@Override
+	public void asyncWrite( final ByteBuffer buffer) throws IOException {
+		/*synchronized( socketChannel_ ) {
+			try {
+				socketChannel_.write( buffer );
+			} catch (IOException e) {
+				e.printStackTrace();
+			}		
+		}*/
+		selector_.register( socketChannel_, SelectionKey.OP_WRITE, new TSelector.ChannelOperator() {			
+			@Override
+			public void doOperation() {
+				try {
+					socketChannel_.write( buffer );
+				} catch (IOException e) {
+					e.printStackTrace();
+				}				
+			}
+			
+		}, 1 );
+		
+	}
 
 }
