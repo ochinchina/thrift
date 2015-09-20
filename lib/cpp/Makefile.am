@@ -75,6 +75,7 @@ libthrift_la_SOURCES = src/Thrift.cpp \
                        src/server/TThreadPoolServer.cpp \
                        src/server/TThreadedServer.cpp \
                        src/async/TAsyncChannel.cpp \
+                       src/async/TSocketAsyncServer.cpp \
                        src/processor/PeekProcessor.cpp
 
 if WITH_BOOSTTHREADS
