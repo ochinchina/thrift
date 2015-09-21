@@ -5,6 +5,7 @@
 #include <async/TAsyncProcessor.h>
 #include <protocol/TProtocol.h>
 #include <transport/TBufferTransports.h>
+#include <concurrency/ThreadManager.h>
 
 namespace apache { namespace thrift { namespace async {
 class TSocketAsyncServer {
@@ -13,7 +14,8 @@ public:
 	TSocketAsyncServer( const std::string& addr, 
 			const std::string& port,
 			const boost::shared_ptr<apache::thrift::protocol::TProtocolFactory>& protoFactory, 
-			const boost::shared_ptr<apache::thrift::async::TAsyncProcessor>& processor );
+			const boost::shared_ptr<apache::thrift::async::TAsyncProcessor>& processor,
+			int processorThreads );
 	void serve();
 private:
 	void startAccept();
@@ -37,6 +39,8 @@ private:
 	void processCompleted( boost::shared_ptr< boost::asio::ip::tcp::socket> sock,
 				bool success,
 				boost::shared_ptr<apache::thrift::transport::TMemoryBuffer> outBuf );
+	void processRequest( boost::shared_ptr< boost::asio::ip::tcp::socket > sock,
+				boost::shared_ptr<apache::thrift::transport::TMemoryBuffer> reqBuf );
 				
 	static void writeFinished( const boost::system::error_code& error,  boost::shared_ptr<apache::thrift::transport::TMemoryBuffer> outBuf );	
 private:
@@ -44,8 +48,10 @@ private:
 	std::string listenPort_;
 	boost::asio::io_service io_service_;
 	boost::asio::ip::tcp::acceptor acceptor_;
-	boost::shared_ptr<apache::thrift::async::TAsyncProcessor> processor_;
 	boost::shared_ptr<apache::thrift::protocol::TProtocolFactory> protoFactory_;
+	boost::shared_ptr<apache::thrift::async::TAsyncProcessor> processor_;
+	boost::shared_ptr<apache::thrift::concurrency::ThreadManager> threadManager_;
+	class Task;
 };
 
 }}}//end namespace

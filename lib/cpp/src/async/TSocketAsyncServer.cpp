@@ -1,13 +1,35 @@
 #include "TSocketAsyncServer.h"
+#include <boost/function.hpp>
 #include <boost/bind.hpp>
 
 namespace apache { namespace thrift { namespace async {
+
+class TSocketAsyncServer::Task: public apache::thrift::concurrency::Runnable {
+public:
+	Task( const boost::function< void() >& func )
+	:func_( func )
+	{
+	}
+	virtual void run() {
+		func_();
+	}
+private:
+	boost::function< void() > func_;
+};
+
 TSocketAsyncServer::TSocketAsyncServer( const std::string& addr, 
 		const std::string& port,
 		const boost::shared_ptr<apache::thrift::protocol::TProtocolFactory>& protoFactory, 
-		const boost::shared_ptr<apache::thrift::async::TAsyncProcessor>& processor )
-:acceptor_( io_service_ )
+		const boost::shared_ptr<apache::thrift::async::TAsyncProcessor>& processor,
+		int processorThreads )
+:listenAddr_( addr ),
+listenPort_( port ),
+acceptor_( io_service_ ),
+protoFactory_( protoFactory ),
+processor_( processor ),
+threadManager_( apache::thrift::concurrency::ThreadManager::newThreadManager() )
 {
+	threadManager_->addWorker( processorThreads );
 }
 
 void TSocketAsyncServer::serve() {
@@ -70,19 +92,23 @@ void TSocketAsyncServer::dataRecevied( boost::shared_ptr< boost::asio::ip::tcp::
 		msg_buf->append( tmp_buf, bytes_read );
 		boost::shared_ptr<apache::thrift::transport::TMemoryBuffer> frame = extractFrame( *msg_buf );
 		for( ;frame; frame = extractFrame( *msg_buf ) ) {
-			 boost::shared_ptr<apache::thrift::transport::TMemoryBuffer>outBuf(new apache::thrift::transport::TMemoryBuffer());
-			uint8_t lenBuf[4];
-			
-			outBuf->write( lenBuf, 4 );
-			
-			boost::shared_ptr<apache::thrift::protocol::TProtocol> iprot(protoFactory_->getProtocol(frame));
-			boost::shared_ptr<apache::thrift::protocol::TProtocol> oprot(protoFactory_->getProtocol(outBuf));
-			processor_->process( std::tr1::bind( &TSocketAsyncServer::processCompleted, this, sock,  std::tr1::placeholders::_1, outBuf ),
-					iprot,
-					oprot);
+			threadManager_->add( boost::shared_ptr< Task >( new Task( boost::bind( &TSocketAsyncServer::processRequest, this, sock, frame ) ) ) );
 		}
 		startRead( sock, tmp_buf, tmp_buf_len, msg_buf );
 	}	
+}
+
+void TSocketAsyncServer::processRequest(  boost::shared_ptr< boost::asio::ip::tcp::socket > sock,
+				boost::shared_ptr<apache::thrift::transport::TMemoryBuffer> reqBuf ) {
+	boost::shared_ptr<apache::thrift::transport::TMemoryBuffer>outBuf(new apache::thrift::transport::TMemoryBuffer());
+	uint8_t lenBuf[4];
+	outBuf->write( lenBuf, 4 );	
+	boost::shared_ptr<apache::thrift::protocol::TProtocol> iprot(protoFactory_->getProtocol(reqBuf));
+	boost::shared_ptr<apache::thrift::protocol::TProtocol> oprot(protoFactory_->getProtocol(outBuf));
+	processor_->process( std::tr1::bind( &TSocketAsyncServer::processCompleted, this, sock,  std::tr1::placeholders::_1, outBuf ),
+                                        iprot,
+                                        oprot);
+
 }
 
 boost::shared_ptr<apache::thrift::transport::TMemoryBuffer> TSocketAsyncServer::extractFrame( std::string& msg_buf ) {
