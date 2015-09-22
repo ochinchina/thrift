@@ -3,6 +3,7 @@
 
 #include "TAsyncDispatchableChannel.h"
 #include <boost/asio.hpp>
+#include <concurrency/ThreadManager.h>
 
 namespace apache { namespace thrift { namespace async {
 
@@ -60,7 +61,7 @@ public:
         /**
          *  startup the channel for using
          */
-        void start();
+        void start( const boost::function< void() >& connectCb =  boost::function< void() >() );
 
         /**
          *  stop the channel
@@ -85,26 +86,29 @@ private:
         static void handleTimeout( const boost::system::error_code& error, boost::function<void()> callback, boost::shared_ptr<boost::asio::deadline_timer> timer );
 
 
-        void startRead( boost::shared_array<char> buf, size_t size );
+        void startRead( boost::shared_array<char> buf, size_t size, const  boost::function<void()>& connCb );
 
         void dataReceived( const boost::system::error_code& error,
                                 std::size_t bytes_transferred,
                                 boost::shared_array<char> buf,
-                                size_t buf_size );
+                                size_t buf_size,
+				 boost::function<void()> connCb );
         /**
          *  start the connection to the peer
          */
-        void startConnect() ;
+        void startConnect( const boost::function<void()>& connCb ) ;
 
         /**
          * the callback for async_connect()
          */
-        void handleConnect(const boost::system::error_code& error);
-        void startReconnectTimer();
+        void handleConnect(const boost::system::error_code& error,  boost::function<void()> connCb );
+        void startReconnectTimer( const  boost::function<void()>& connCb);
 
-        void handleReconnectTimeout( const boost::system::error_code& error, boost::shared_ptr<boost::asio::deadline_timer> timer );
+        void handleReconnectTimeout( const boost::system::error_code& error, boost::shared_ptr<boost::asio::deadline_timer> timer, boost::function<void()> connCb );
 
         void processPackets();
+
+	void processPacket( std::string msg );
 
         int32_t readInt( const std::string& s );
 
@@ -121,6 +125,8 @@ private:
         std::string recvPackets_;
         boost::shared_ptr<boost::asio::ip::tcp::socket> sock_;
         ::apache::thrift::protocol::TProtocolFactory* protocolFactory_;
+	boost::shared_ptr<apache::thrift::concurrency::ThreadManager> threadManager_;
+	class Task;
 };
 
 }}}//end of namespace

@@ -58,7 +58,11 @@ class ThreadManager {
 
  public:
   class Task;
+#ifdef USE_BOOST_THREAD
+  typedef boost::function<void(boost::shared_ptr<Runnable>)> ExpireCallback;
+#else
   typedef std::tr1::function<void(boost::shared_ptr<Runnable>)> ExpireCallback;
+#endif
 
   virtual ~ThreadManager() {}
 

@@ -51,6 +51,10 @@
 #include <io.h>
 #endif
 
+#ifdef USE_BOOST_THREAD
+#include <boost/bind.hpp>
+#endif
+
 namespace apache { namespace thrift { namespace transport {
 
 using boost::scoped_ptr;

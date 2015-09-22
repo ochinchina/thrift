@@ -1,7 +1,9 @@
 #include "BackGroundIOService.h"
 #include <boost/thread.hpp>
+#include <boost/bind.hpp>
 
 namespace apache { namespace thrift { namespace async {
+
 BackGroundIOService& BackGroundIOService::getInstance() {
 	static BackGroundIOService* instance = 0;
 	static boost::mutex m;
@@ -32,14 +34,15 @@ void BackGroundIOService::stop() {
 BackGroundIOService::BackGroundIOService()
 :stop_( false ),
 io_service_work_( io_service_ ),
-serviceRunThread_( boost::bind( &AsyncIOService::run, this ) )
+serviceRunThread_( boost::bind( &BackGroundIOService::run, this ) )
 {
 }
 
 BackGroundIOService::~BackGroundIOService() {
 	stop();
 }
-void BackGroundIOService:::run() {
+
+void BackGroundIOService::run() {
 	while( !stop_ ) {
 		try {
 			io_service_.run();
@@ -47,4 +50,5 @@ void BackGroundIOService:::run() {
 		}
 	}
 }
-}}}
+
+}}}//end of namesapce

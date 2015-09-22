@@ -55,6 +55,10 @@
 #define AF_LOCAL AF_UNIX
 #endif
 
+#ifdef USE_BOOST_THREAD
+#include <boost/bind.hpp>
+#endif
+
 namespace apache { namespace thrift { namespace server {
 
 using namespace apache::thrift::protocol;
@@ -1142,7 +1146,11 @@ void TNonblockingServer::registerEvents(event_base* base, bool ownEventBase) {
 void TNonblockingServer::setThreadManager(boost::shared_ptr<ThreadManager> threadManager) {
   threadManager_ = threadManager;
   if (threadManager != NULL) {
+#ifdef USE_BOOST_THREAD
+    threadManager->setExpireCallback(boost::bind(&TNonblockingServer::expireClose, this, _1));
+#else
     threadManager->setExpireCallback(std::tr1::bind(&TNonblockingServer::expireClose, this, std::tr1::placeholders::_1));
+#endif
     threadPoolProcessing_ = true;
   } else {
     threadPoolProcessing_ = false;

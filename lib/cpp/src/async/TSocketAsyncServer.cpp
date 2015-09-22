@@ -1,6 +1,7 @@
 #include "TSocketAsyncServer.h"
 #include <boost/function.hpp>
 #include <boost/bind.hpp>
+#include <concurrency/BoostThreadFactory.h>
 
 namespace apache { namespace thrift { namespace async {
 
@@ -29,6 +30,8 @@ protoFactory_( protoFactory ),
 processor_( processor ),
 threadManager_( apache::thrift::concurrency::ThreadManager::newThreadManager() )
 {
+	threadManager_->threadFactory( boost::shared_ptr<apache::thrift::concurrency::BoostThreadFactory>( new apache::thrift::concurrency::BoostThreadFactory() ) );
+	threadManager_->start();
 	threadManager_->addWorker( processorThreads );
 }
 
@@ -42,15 +45,17 @@ void TSocketAsyncServer::serve() {
 	if( ec ) {
 		throw std::runtime_error( "fail to solve the listening address");
 	}
-	
+
 	for( ; iter != boost::asio::ip::tcp::resolver::iterator(); iter++ ) {
 		boost::asio::ip::tcp::endpoint ep = *iter;
+		acceptor_.open( ep.protocol(), ec );
 		acceptor_.bind( ep, ec );
-		if( !ec ) break;
+		if( ec ) break;
 	}
 	
 	acceptor_.listen( 128, ec );
-	
+
+	if( ec ) throw  std::runtime_error("fail to listen");
 	startAccept();
 	io_service_.run();
 		
@@ -65,6 +70,7 @@ void TSocketAsyncServer::connectionAccepted( const boost::system::error_code& ec
 
 	if( !ec ) {
 		startRead( sock, new char[4096], 4096, new std::string() );
+		startAccept();
 	}
 
 }
