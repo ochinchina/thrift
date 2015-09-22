@@ -250,19 +250,28 @@ public class TNonblockingSocket extends TNonblockingTransport {
 	}
 
 	private void startConnect() {
-		// TODO Auto-generated method stub
+		selector_.register( socketChannel_, SelectionKey.OP_CONNECT, new TSelector.ChannelOperator() {
+			
+			@Override
+			public void doOperation() {
+				try {
+					socketChannel_.finishConnect();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+		}, -1 );
 		
+		try {
+			socketChannel_.connect( socketAddress_ );
+		} catch (IOException e) {
+			e.printStackTrace();
+		}		
 	}
 	
 	@Override
 	public void asyncWrite( final ByteBuffer buffer) throws IOException {
-		/*synchronized( socketChannel_ ) {
-			try {
-				socketChannel_.write( buffer );
-			} catch (IOException e) {
-				e.printStackTrace();
-			}		
-		}*/
+		
 		selector_.register( socketChannel_, SelectionKey.OP_WRITE, new TSelector.ChannelOperator() {			
 			@Override
 			public void doOperation() {
