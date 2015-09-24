@@ -24,12 +24,16 @@ import java.nio.ByteBuffer;
 
 public abstract class TNonblockingTransport extends TTransport {
 
-	public static interface MessageListener {
-
-		void msgReceived(ByteBuffer msgBuf);
-		void exception( Exception ex );
-		
+	public static interface AsyncWriteListener {
+		/**
+		 * 
+		 * @param success true - success to write, false - fail to write
+		 */
+		void writeFinished( boolean success );
 	}
+	
+	public abstract void setMessageListener( TNonblockingMessageListener listener );
+	public abstract void start() throws IOException; 
   /**
    * Non-blocking connection initialization.
    * @see java.nio.channels.SocketChannel#connect(SocketAddress remote)
@@ -44,6 +48,6 @@ public abstract class TNonblockingTransport extends TTransport {
 
   //public abstract SelectionKey registerSelector(Selector selector, int interests) throws IOException;
 
-  public abstract void startAsyncRead( MessageListener listener ) throws IOException;
-  public abstract void asyncWrite(ByteBuffer buffer) throws IOException;
+  //public abstract void startAsyncRead( MessageListener listener ) throws IOException;
+  public abstract void asyncWrite(ByteBuffer buffer, AsyncWriteListener listener ) throws IOException;
 }

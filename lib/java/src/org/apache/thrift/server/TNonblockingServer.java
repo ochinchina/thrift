@@ -26,6 +26,7 @@ import org.apache.thrift.protocol.TProtocol;
 import org.apache.thrift.transport.TFramedTransport;
 import org.apache.thrift.transport.TIOStreamTransport;
 import org.apache.thrift.transport.TMemoryInputTransport;
+import org.apache.thrift.transport.TNonblockingMessageListener;
 import org.apache.thrift.transport.TNonblockingServerTransport;
 import org.apache.thrift.transport.TNonblockingTransport;
 import org.apache.thrift.transport.TTransport;
@@ -58,12 +59,12 @@ public class TNonblockingServer extends AbstractNonblockingServer {
   }
 
   // Flag for stopping the server
-  private volatile boolean stopped_ = true;
+  private volatile boolean stopped_ = true;  
   private ExecutorService threadPool_ = null;
   
 
 
-  public TNonblockingServer(AbstractNonblockingServerArgs args, ExecutorService threadPool ) {
+  public TNonblockingServer(AbstractNonblockingServerArgs args,  ExecutorService threadPool ) {
     super(args);
     this.threadPool_ = threadPool;
   }
@@ -78,39 +79,47 @@ public class TNonblockingServer extends AbstractNonblockingServer {
   @Override
   protected boolean startThreads() {
 	  ((TNonblockingServerTransport)serverTransport_).accept( new TNonblockingServerTransport.TransportAcceptCallback() {
-		
-		@Override
-		public void accepted(final TNonblockingTransport transport) {
-			try {
-				transport.startAsyncRead( new TNonblockingTransport.MessageListener() {
-					
-					@Override
-					public void msgReceived( final ByteBuffer msgBuf) {
-						if( threadPool_ == null ) {
-							requestInvoke( transport, msgBuf );
-						} else {
-							threadPool_.submit( new Runnable() {
-								@Override
-								public void run() {
-									requestInvoke( transport, msgBuf );
-								}
-							});
-						}
-					}
 
-					@Override
-					public void exception( Exception ex ) {
-						
-					}
-				});
-				
+		@Override
+		public void accepted(TNonblockingTransport transport) {
+			transport.setMessageListener(createMessageListener());
+			try {
+				transport.start();
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
 		}
-	});
+		  
+	  });		
 	this.stopped_ = false;
     return true;
+  }
+  
+  private TNonblockingMessageListener createMessageListener( ) {
+	  return new TNonblockingMessageListener() {
+
+		@Override
+		public void msgReceived( final TNonblockingTransport transport, final ByteBuffer msgBuf) {
+			if( threadPool_ == null ) {
+				requestInvoke( transport, msgBuf );
+			} else {
+				threadPool_.submit( new Runnable() {
+					@Override
+					public void run() {
+						requestInvoke( transport, msgBuf );
+					}
+				});
+			}
+			
+		}
+
+		@Override
+		public void exception(final TNonblockingTransport transport, Exception ex) {
+			// TODO Auto-generated method stub
+			
+		}
+		  
+	  };
   }
 
   @Override
@@ -149,7 +158,13 @@ public class TNonblockingServer extends AbstractNonblockingServer {
       try {
     	  TProtocol outProt = outputProtocolFactory_.getProtocol( outputTransportFactory_.getTransport(new TIOStreamTransport(response )) );
         processorFactory_.getProcessor(inTrans).process(inProt, outProt);
-        transport.asyncWrite( ByteBuffer.wrap( response.toByteArray() ) ); 
+        transport.asyncWrite( ByteBuffer.wrap( response.toByteArray() ), new TNonblockingTransport.AsyncWriteListener() {
+			
+			@Override
+			public void writeFinished(boolean success) {
+				if( !success ) LOGGER.error( "fail to write the message to client");
+			}
+		} ); 
       } catch (Throwable t) {
     	  t.printStackTrace();
         LOGGER.error("Unexpected throwable while invoking!", t);

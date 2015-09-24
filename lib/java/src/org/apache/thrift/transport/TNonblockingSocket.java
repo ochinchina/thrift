@@ -22,14 +22,12 @@ package org.apache.thrift.transport;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.net.SocketAddress;
-import java.net.SocketException;
 import java.nio.ByteBuffer;
-import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
+import java.util.Timer;
+import java.util.TimerTask;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,21 +39,16 @@ public class TNonblockingSocket extends TNonblockingTransport {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(TNonblockingSocket.class.getName());
 
-  /**
-   * Host and port if passed in, used for lazy non-blocking connect.
-   */
-  private final SocketAddress socketAddress_;
-
-  private final SocketChannel socketChannel_;
-
-  private TSelector selector_;
+  private AsyncChannel asyncChannel_;
+  
   private ByteBuffer frameSizeBuffer = ByteBuffer.allocate(4);
   private ByteBuffer frameBuffer = null;
+  private static final Timer connectTimer = new Timer();
 
   
 
-  public TNonblockingSocket(String host, int port, TSelector selector) throws IOException {
-    this(host, port, 0, selector );
+  public TNonblockingSocket(String host, int port ) throws IOException {
+    this(host, port, 0);
   }
 
   /**
@@ -65,8 +58,8 @@ public class TNonblockingSocket extends TNonblockingTransport {
    * @throws TTransportException
    * @throws IOException
    */
-  public TNonblockingSocket(String host, int port, int timeout, TSelector selector ) throws IOException {
-    this(SocketChannel.open(), timeout, new InetSocketAddress(host, port), selector );
+  public TNonblockingSocket(String host, int port, int timeout ) throws IOException {
+    this(SocketChannel.open(), timeout, new InetSocketAddress(host, port) );
   }
 
   /**
@@ -75,49 +68,43 @@ public class TNonblockingSocket extends TNonblockingTransport {
    * @param socketChannel Already created SocketChannel object
    * @throws IOException if there is an error setting up the streams
    */
-  public TNonblockingSocket(SocketChannel socketChannel, TSelector selector ) throws IOException {
-    this(socketChannel, 0, null, selector );
+  public TNonblockingSocket(SocketChannel socketChannel) throws IOException {
+    this(socketChannel, 0, null );
     if (!socketChannel.isConnected()) throw new IOException("Socket must already be connected");
   }
 
-  private TNonblockingSocket(SocketChannel socketChannel, int timeout, SocketAddress socketAddress, TSelector selector )
+  private TNonblockingSocket(SocketChannel socketChannel, int timeout, SocketAddress socketAddress )
       throws IOException {
-    socketChannel_ = socketChannel;
-    socketAddress_ = socketAddress;
-
-
-    // set options
-    Socket socket = socketChannel.socket();
-    socket.setSoLinger(false, 0);
-    socket.setTcpNoDelay(true);
-    setTimeout(timeout);
-    if( socketAddress_ != null ) {
-    	socket.connect( socketAddress_ );
-    }
-    // make it a nonblocking channel
-    socketChannel.configureBlocking(false);
-    this.selector_ = selector;
+	if( socketChannel != null && socketChannel.isConnected() ) {
+		this.asyncChannel_ = new AsyncChannel( TSelector.getDefaultInstance(), socketChannel, timeout );
+	} else {
+		this.asyncChannel_ = new AsyncChannel( TSelector.getDefaultInstance(), socketAddress, timeout );
+	}    
   }
 
  
+ @Override
+ public void start() {
+	 this.asyncChannel_.start();
+ }
+ 
+ public void setMessageListener( TNonblockingMessageListener listener ) {
+	 this.asyncChannel_.setMessageListener( listener );
+ }
   /**
    * Sets the socket timeout, although this implementation never uses blocking operations so it is unused.
    *
    * @param timeout Milliseconds timeout
    */
   public void setTimeout(int timeout) {
-    try {
-      socketChannel_.socket().setSoTimeout(timeout);
-    } catch (SocketException sx) {
-      LOGGER.warn("Could not set socket timeout.", sx);
-    }
+	  asyncChannel_.setTimeout( timeout );
   }
 
   /**
    * Returns a reference to the underlying SocketChannel.
    */
   public SocketChannel getSocketChannel() {
-    return socketChannel_;
+    return asyncChannel_.getSocketChannel();
   }
 
   /**
@@ -125,7 +112,7 @@ public class TNonblockingSocket extends TNonblockingTransport {
    */
   public boolean isOpen() {
     // isConnected() does not return false after close(), but isOpen() does
-    return socketChannel_.isOpen() && socketChannel_.isConnected();
+	  return asyncChannel_.isConnected();
   }
 
   /**
@@ -139,7 +126,7 @@ public class TNonblockingSocket extends TNonblockingTransport {
    * Perform a nonblocking read into buffer.
    */
   public int read(ByteBuffer buffer) throws IOException {
-    return socketChannel_.read(buffer);
+	  throw new IOException( "not support this operation");
   }
 
 
@@ -147,37 +134,21 @@ public class TNonblockingSocket extends TNonblockingTransport {
    * Reads from the underlying input stream if not null.
    */
   public int read(byte[] buf, int off, int len) throws TTransportException {
-    if ((socketChannel_.validOps() & SelectionKey.OP_READ) != SelectionKey.OP_READ) {
-      throw new TTransportException(TTransportException.NOT_OPEN,
-        "Cannot read from write-only socket channel");
-    }
-    try {
-      return socketChannel_.read(ByteBuffer.wrap(buf, off, len));
-    } catch (IOException iox) {
-      throw new TTransportException(TTransportException.UNKNOWN, iox);
-    }
+	  throw new TTransportException( "not support this operation");
   }
 
   /**
    * Perform a nonblocking write of the data in buffer;
    */
   public int write(ByteBuffer buffer) throws IOException {
-    return socketChannel_.write(buffer);
+	  throw new IOException( "not support this operation");
   }
 
   /**
    * Writes to the underlying output stream if not null.
    */
   public void write(byte[] buf, int off, int len) throws TTransportException {
-    if ((socketChannel_.validOps() & SelectionKey.OP_WRITE) != SelectionKey.OP_WRITE) {
-      throw new TTransportException(TTransportException.NOT_OPEN,
-        "Cannot write to write-only socket channel");
-    }
-    try {
-      socketChannel_.write(ByteBuffer.wrap(buf, off, len));
-    } catch (IOException iox) {
-      throw new TTransportException(TTransportException.UNKNOWN, iox);
-    }
+	  throw new TTransportException( "not support this operation");
   }
 
   /**
@@ -191,45 +162,24 @@ public class TNonblockingSocket extends TNonblockingTransport {
    * Closes the socket.
    */
   public void close() {
-    try {
-      socketChannel_.close();
-    } catch (IOException iox) {
-      LOGGER.warn("Could not close socket.", iox);
-    }
+	  asyncChannel_.close();
   }
 
 
 
-	@Override
-	public void startAsyncRead( final MessageListener listener) throws IOException {
-		selector_.register( socketChannel_, SelectionKey.OP_READ, new TSelector.ChannelOperator() {
-			
-			@Override
-			public void doOperation() {
-				ByteBuffer frameBuf = readFrame();
-				if( frameBuf != null ) {
-					listener.msgReceived( frameBuf );
-				}
-				
-			}
-			
-		}, -1 );
+	
 		
-	}
-	
-	
 
-	protected ByteBuffer readFrame() {
-			try {
+	protected ByteBuffer readFrame( SocketChannel sockChannel ) throws IOException  {
 				if( frameSizeBuffer.remaining() != 0 ) {
-					socketChannel_.read( frameSizeBuffer );
+					sockChannel.read( frameSizeBuffer );
 					if( frameSizeBuffer.remaining() == 0 ) {
 						int n = TFramedTransport.decodeFrameSize(frameSizeBuffer.array());
 						frameBuffer = ByteBuffer.allocate( n );
-						socketChannel_.read( frameBuffer );
+						sockChannel.read( frameBuffer );
 					}
 				} else {
-					socketChannel_.read( frameBuffer );
+					sockChannel.read( frameBuffer );
 				}
 				
 				if( frameSizeBuffer.remaining() == 0 && frameBuffer.remaining() == 0 ) {
@@ -238,52 +188,234 @@ public class TNonblockingSocket extends TNonblockingTransport {
 					frameSizeBuffer.position( 0 );
 					return frameBuffer;
 				}
-			} catch (IOException e) {
-				selector_.cancel( socketChannel_, SelectionKey.OP_READ);
-				startConnect();
-				//e.printStackTrace();
-			}
-		
-		return null;
+				return null;
 		
 		
-	}
-
-	private void startConnect() {
-		selector_.register( socketChannel_, SelectionKey.OP_CONNECT, new TSelector.ChannelOperator() {
-			
-			@Override
-			public void doOperation() {
-				try {
-					socketChannel_.finishConnect();
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
-			}
-		}, -1 );
-		
-		try {
-			socketChannel_.connect( socketAddress_ );
-		} catch (IOException e) {
-			e.printStackTrace();
-		}		
 	}
 	
+	
+	
+	
 	@Override
-	public void asyncWrite( final ByteBuffer buffer) throws IOException {
+	public void asyncWrite( final ByteBuffer buffer, final AsyncWriteListener listener ) throws IOException {
+		asyncChannel_.asyncWrite(buffer, listener);		
+	}
+	
+	private class ProxyMessageListener implements TNonblockingMessageListener {
 		
-		selector_.register( socketChannel_, SelectionKey.OP_WRITE, new TSelector.ChannelOperator() {			
-			@Override
-			public void doOperation() {
-				try {
-					socketChannel_.write( buffer );
-				} catch (IOException e) {
-					e.printStackTrace();
-				}				
+		private TNonblockingMessageListener listener_ = null;
+		private volatile boolean exceptionRaised = false;
+		
+		ProxyMessageListener(TNonblockingMessageListener listener ) {
+			listener_ = listener;
+		}
+		
+		
+		@Override
+		public void msgReceived(TNonblockingTransport transport, ByteBuffer msgBuf) {
+			exceptionRaised = false;
+			listener_.msgReceived(transport, msgBuf);
+		}
+
+		@Override
+		public void exception(TNonblockingTransport transport, Exception ex) {
+			if( !exceptionRaised) {
+				exceptionRaised = true;
+				listener_.exception(transport, ex);
+			}
+		}
+		
+	}
+	
+	
+	private class AsyncChannel {
+		private TSelector selector_;
+		private volatile boolean stop_ = false;
+		private volatile SocketChannel socketChannel_;
+		private SocketAddress socketAddress_;
+		private int timeout_;
+		private TNonblockingMessageListener listener = null;
+		
+		AsyncChannel( TSelector selector, SocketChannel socketChannel, int timeout ) {
+			this.selector_ = selector;
+			this.socketChannel_ = socketChannel;
+			this.timeout_ = timeout;
+			setSocketOptions();
+			
+			
+		}
+		
+		public void setMessageListener(TNonblockingMessageListener listener) {
+			this.listener = new ProxyMessageListener( listener );
+			
+		}
+
+		public void start() {
+			if( isConnected() ) {
+				doRead();
+			}else {
+				connectLater( 10 );
+			}
+		}
+
+		void close() {
+			try {
+				stop_ = true;
+				socketChannel_.close();
+			}catch( Exception ex ) {				
 			}
 			
-		}, 1 );
+		}
+
+		SocketChannel getSocketChannel() {
+			return socketChannel_;
+		}
+
+		void setTimeout(int timeout) {
+			this.timeout_ = timeout;
+			try {
+				socketChannel_.socket().setSoTimeout(timeout);
+			}catch( Exception ex ) {
+				
+			}
+		}
+
+		AsyncChannel( TSelector selector, SocketAddress socketAddress, int timeout ) throws IOException {
+			this.selector_ = selector;
+			this.socketAddress_ = socketAddress;
+			this.timeout_ = timeout;
+			this.listener = new ProxyMessageListener( listener );
+			
+		}
 		
+		private void setSocketOptions() {
+			try {
+				socketChannel_.configureBlocking( false );
+				socketChannel_.socket().setSoLinger(false, 0);
+				socketChannel_.socket().setTcpNoDelay(true);
+				socketChannel_.socket().setSoTimeout(timeout_);
+			} catch (IOException e) {
+			}
+			
+		}
+		
+		
+		void doRead() {
+			
+			if( stop_ ) {
+				listener.exception( TNonblockingSocket.this, new Exception("already stoped") );
+				return;
+			}
+			
+			selector_.register( socketChannel_, SelectionKey.OP_READ, new TSelector.ChannelOperator() {
+			
+					
+					@Override
+					public void doOperation()  {
+						try {
+							ByteBuffer frameBuf = readFrame(socketChannel_);
+							if( frameBuf != null ) {
+								listener.msgReceived( TNonblockingSocket.this, frameBuf );
+							}							
+							doRead();
+						}catch( Exception ex ) {
+							listener.exception( TNonblockingSocket.this, new Exception("connection lost") );
+							connectLater( 100 );
+						}
+					}
+					
+			}, 1 );
+		}
+		
+		void asyncWrite( final ByteBuffer buffer, final AsyncWriteListener writeListener )  {
+			if( stop_ || !isConnected() ) {
+				writeListener.writeFinished(false);
+				return;
+			}
+			
+			selector_.register( socketChannel_, SelectionKey.OP_WRITE, new TSelector.ChannelOperator() {			
+				@Override
+				public void doOperation() {
+					try {
+						socketChannel_.write( buffer );
+						writeListener.writeFinished(true);
+					} catch (IOException e) {
+						LOGGER.error( "fail to write to the server", e);
+						writeListener.writeFinished(false);
+					}				
+				}
+				
+			}, 1 );
+		}
+		
+		private void connectLater( int delayMillis ) {
+			if( stop_ ) {
+				return;
+			}
+			
+			if( delayMillis <= 0 ) {
+				doConnect();
+			} else {
+				connectTimer.schedule( new TimerTask(){
+	
+					@Override
+					public void run() {
+						doConnect();				
+					}
+					
+				}, delayMillis);
+			}
+		}
+		
+		
+		private void doConnect() {
+			
+			
+			if( socketAddress_ == null ) {
+				return;
+			}
+			
+			try {
+				socketChannel_.close();
+			}catch( Exception ex ) {
+				
+			}
+			try {
+				socketChannel_ = SocketChannel.open();
+				setSocketOptions();
+				selector_.register( socketChannel_, SelectionKey.OP_CONNECT, new TSelector.ChannelOperator() {
+					
+					@Override
+					public void doOperation() {
+						try {
+							socketChannel_.finishConnect();
+						}catch( Exception ex ) {
+							ex.printStackTrace();
+						}
+						if( isConnected() ) {
+							doRead();
+						} else {
+							connectLater(100);
+						}
+					}
+				}, 1 );
+				
+				try {
+					if( socketChannel_.connect( socketAddress_ )  ) {
+						doRead();
+					} 
+				} catch (IOException e) {
+					connectLater( 100 );
+				}		
+				
+			} catch (IOException e1) {
+				connectLater( 100 );
+			}
+		}
+		
+		private boolean isConnected() {
+			return socketChannel_ != null && socketChannel_.isOpen() && socketChannel_.isConnected();
+		}
 	}
 
 }

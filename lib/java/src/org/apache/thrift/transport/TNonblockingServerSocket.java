@@ -54,7 +54,7 @@ public class TNonblockingServerSocket extends TNonblockingServerTransport {
    * Timeout for client sockets from accept
    */
   private int clientTimeout_ = 0;
-  private TSelector selector = new TSelector();
+  private TSelector selector = TSelector.getDefaultInstance();
 
   /**
    * Creates just a port listening server socket
@@ -104,7 +104,7 @@ public class TNonblockingServerSocket extends TNonblockingServerTransport {
     }
   }
 
-  protected TNonblockingSocket acceptImpl() throws TTransportException {
+  protected TTransport acceptImpl() throws TTransportException {
     if (serverSocket_ == null) {
       throw new TTransportException(TTransportException.NOT_OPEN, "No underlying server socket.");
     }
@@ -114,7 +114,7 @@ public class TNonblockingServerSocket extends TNonblockingServerTransport {
         return null;
       }
 
-      TNonblockingSocket tsocket = new TNonblockingSocket(socketChannel, null );
+      TNonblockingSocket tsocket = new TNonblockingSocket(socketChannel );
       tsocket.setTimeout(clientTimeout_);
       return tsocket;
     } catch (IOException iox) {
@@ -150,7 +150,7 @@ public void accept( final TransportAcceptCallback acceptCallback) {
 			try {				
 				SocketChannel socketChannel = serverSocketChannel.accept();
 				if( socketChannel != null ) {
-					TNonblockingSocket tsocket = new TNonblockingSocket(socketChannel, selector );
+					TNonblockingSocket tsocket = new TNonblockingSocket(socketChannel );
 				    tsocket.setTimeout(clientTimeout_);
 				    try {
 				    	acceptCallback.accepted(tsocket);

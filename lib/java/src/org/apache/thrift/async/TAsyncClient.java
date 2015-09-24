@@ -25,6 +25,7 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import org.apache.thrift.TApplicationException;
 import org.apache.thrift.TException;
@@ -34,6 +35,7 @@ import org.apache.thrift.protocol.TProtocol;
 import org.apache.thrift.protocol.TProtocolFactory;
 import org.apache.thrift.transport.TMemoryBuffer;
 import org.apache.thrift.transport.TMemoryInputTransport;
+import org.apache.thrift.transport.TNonblockingMessageListener;
 import org.apache.thrift.transport.TNonblockingTransport;
 
 public abstract class TAsyncClient {
@@ -42,12 +44,12 @@ public abstract class TAsyncClient {
   //timeout in milliseconds
   private long ___timeout;
   private ConcurrentHashMap< Integer, TAsyncMethodCall > methodCalls = new ConcurrentHashMap<Integer, TAsyncMethodCall>(); 
-  private ExecutorService responseProcThreadPool = null;
+  private volatile ExecutorService responseProcThreadPool = null;
   private static Timer methodTimeoutTimer = new Timer();
-  
+  private MethodTimeoutManager methodTimeoutMgr = new MethodTimeoutManager();
 
   public TAsyncClient(TProtocolFactory protocolFactory, TNonblockingTransport transport) {
-    this(protocolFactory,  transport, 0);
+   this(protocolFactory,  transport, 0);
   }
 
   public TAsyncClient(TProtocolFactory protocolFactory, TNonblockingTransport transport, long timeout) {
@@ -55,10 +57,18 @@ public abstract class TAsyncClient {
     this.___transport = transport;
     this.___timeout = timeout;
     try {
-	    this.___transport.startAsyncRead( new TNonblockingTransport.MessageListener() {
+    	this.___transport.setMessageListener(createMessageListener());
+	    this.___transport.start();
+    }catch( Exception ex ) {    	
+    }
+  }
+  
+ 
+  private TNonblockingMessageListener createMessageListener() {
+	  return new TNonblockingMessageListener() {
 			
 			@Override
-			public void msgReceived( final ByteBuffer msgBuf) {
+			public void msgReceived( final TNonblockingTransport transport, final ByteBuffer msgBuf) {
 				if( responseProcThreadPool == null ) {
 					processReceivedMessage( msgBuf );
 				} else {
@@ -77,6 +87,7 @@ public abstract class TAsyncClient {
 					int seqId = getSeqId( msgBuf );
 					TAsyncMethodCall method = getMethod( seqId );
 					if( method != null ) {
+						methodTimeoutMgr.stopTimeoutTimer(method);
 						method.processResponse( msgBuf );
 					} 
 				}catch( Exception ex ) {
@@ -86,7 +97,7 @@ public abstract class TAsyncClient {
 			}
 
 			@Override
-			public void exception( final Exception ex ) {
+			public void exception( final TNonblockingTransport transport,final Exception ex ) {
 				if( responseProcThreadPool == null ) {
 					processException( ex );
 				} else {
@@ -100,22 +111,19 @@ public abstract class TAsyncClient {
 			}
 
 			private void processException(Exception ex) {
-				HashMap<Integer, TAsyncMethodCall> tmp = new HashMap<Integer, TAsyncMethodCall>( methodCalls );
+				HashMap<Integer, TAsyncMethodCall> tmp = new HashMap<Integer, TAsyncMethodCall>( TAsyncClient.this.methodCalls );
 				
-				methodCalls.clear();
+				TAsyncClient.this.methodCalls.clear();
 				
 				for( int id: tmp.keySet()) {
 					TAsyncMethodCall method = tmp.get( id );
-					handleException(method, ex );
+					methodTimeoutMgr.stopTimeoutTimer(method);
+					TAsyncClient.this.processException( method, new TApplicationException( "connection lost"));
 				}
 			}
 			
-	    });
-    }catch( Exception ex ) {    	
-    }
+	    };
   }
-  
- 
 
 public TProtocolFactory getProtocolFactory() {
     return ___protocolFactory;
@@ -125,16 +133,30 @@ public TProtocolFactory getProtocolFactory() {
     return ___timeout;
   }
   
-  public void call( TAsyncMethodCall method ) throws TException {
+  public void call( final TAsyncMethodCall method ) throws TException {
 	  if( !method.isOneWay() ) {
 		  methodCalls.put( method.getSequenceId(), method );
-		  startTimeoutTimer( method );
+		  //startTimeoutTimer( method );
 	  }
 	  
 	  ByteBuffer request = method.getRequest();
 	  
 	    try {
-			___transport.asyncWrite( request );
+			___transport.asyncWrite( request, new TNonblockingTransport.AsyncWriteListener() {
+
+				@Override
+				public void writeFinished(boolean success) {
+					if( success) {
+						if( !method.isOneWay() ) {
+							startTimeoutTimer( method );	
+						}
+					} else {
+						processException( method, new TApplicationException( "fail to send the request"));
+					}
+					
+				}
+				
+			});
 		} catch (IOException e) {
 			throw new TException( "fail to send the request", e );
 		}
@@ -142,7 +164,7 @@ public TProtocolFactory getProtocolFactory() {
 
 
 
-public boolean hasTimeout() {
+  public boolean hasTimeout() {
     return ___timeout > 0;
   }
 
@@ -153,24 +175,7 @@ public boolean hasTimeout() {
   public void setResponseProcThreadPool( ExecutorService responseProcThreadPool ) {
 	  this.responseProcThreadPool = responseProcThreadPool;
   }
-  
-  private void handleException( TAsyncMethodCall method, Exception ex ) {
-	  /*TMemoryBuffer memoryBuffer = new TMemoryBuffer(128);
-		TProtocol prot = ___protocolFactory.getProtocol(memoryBuffer);
-		try {
-			prot.writeMessageBegin( new TMessage( method.getName(), TMessageType.EXCEPTION, method.getSequenceId()));
-			TApplicationException e = new TApplicationException( TApplicationException.INTERNAL_ERROR, ex.getMessage() );
-			e.write(prot);
-			prot.writeMessageEnd();
-			ByteBuffer frameBuf = ByteBuffer.allocate( memoryBuffer.length() );
-			frameBuf.put( memoryBuffer.getArray(), memoryBuffer.getBufferPosition(), memoryBuffer.length() );
-			method.processResponse( frameBuf );
-		} catch (TException e) {
-			e.printStackTrace();
-		}*/
-	  method.processError(ex);
-  }
-
+    
   private TAsyncMethodCall getMethod(int seqId) {
 	  
 	return methodCalls.remove( seqId );
@@ -185,30 +190,65 @@ public boolean hasTimeout() {
 
   private void startTimeoutTimer( final TAsyncMethodCall method) {
 		if( hasTimeout() ) {
-			methodTimeoutTimer.schedule( new TimerTask() {
-
-				@Override
-				public void run() {
-					processTimeout(method);
-				}
-			}, ___timeout );
+			methodTimeoutMgr.startTimeoutTimer(method);			
 		}
 		
 	}
+  
+  private TimerTask createMethodTimerTask( final TAsyncMethodCall method ) {
+	  return new TimerTask() {
+			@Override public void run() {
+				methodTimeoutMgr.removeTimeoutTimer( method );
+				processException( method, new TApplicationException("method is timeout") );
+			}
+		};
+  }
+  
+  private void stopTimeoutTimer( final TAsyncMethodCall method ) {
+	  methodTimeoutMgr.stopTimeoutTimer(method);
+  }
 
-	private void processTimeout(final TAsyncMethodCall method) {
-		if( getMethod( method.getSequenceId() ) != null ) {
+
+	private void processException( final TAsyncMethodCall method, final TApplicationException ex ) {
+		if( getMethod( method.getSequenceId() ) == method ) {
+			stopTimeoutTimer( method );
 			if( responseProcThreadPool == null ) {
-				handleException( method, new TApplicationException("method is timeout"));
+				try {
+					method.processError(ex);
+				}catch( Exception e ) {					
+				}
 			} else {
 				responseProcThreadPool.submit( new Runnable() {
-					@Override
-					public void run() {
-						handleException( method, new TApplicationException("method is timeout"));								
+					@Override public void run() {
+						 try {
+							 method.processError(ex);								
+						 }catch( Exception e ) {							 
+						 }
 					}
 					
 				});
 			}
+		}
+	}
+	
+	private class MethodTimeoutManager {
+		private ConcurrentHashMap< TAsyncMethodCall, TimerTask > methodTimerTasks = new ConcurrentHashMap<TAsyncMethodCall, TimerTask>();
+		
+		void startTimeoutTimer( final TAsyncMethodCall method ) {
+			TimerTask timerTask = createMethodTimerTask(method);
+			
+			methodTimerTasks.put(method, timerTask);
+			methodTimeoutTimer.schedule(timerTask, ___timeout );
+			
+		}
+		
+		void stopTimeoutTimer( final TAsyncMethodCall method ) {
+			TimerTask timerTask = methodTimerTasks.remove( method );
+			if( timerTask != null ) timerTask.cancel();
+		}
+		
+		void removeTimeoutTimer(  TAsyncMethodCall method ) {
+			methodTimerTasks.remove( method );
 		}
 	}
   

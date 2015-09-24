@@ -43,7 +43,17 @@ public class TSelector {
 	private ConcurrentLinkedQueue< ChannelOperation > pendingOperations = new ConcurrentLinkedQueue<ChannelOperation>();
 	private ConcurrentLinkedQueue< ChannelOperation > cancelOperations = new ConcurrentLinkedQueue<ChannelOperation>();
 	
-	public TSelector() {
+	private static TSelector defInstance_ = new TSelector();
+	
+	public static TSelector newInstance() {
+		return new TSelector();
+	}
+	
+	public static TSelector getDefaultInstance() {
+		return defInstance_;
+	}
+	
+	private TSelector() {
 		try {
 			selectThread = new SelectThread();
 			selectThread.start();
@@ -53,21 +63,18 @@ public class TSelector {
 	}
 	
 	public void register( SelectableChannel channel, int op, ChannelOperator operator, int times ) {
+		pendingOperations.add( new ChannelOperation(channel, op, operator, times ) );
+		
 		if( Thread.currentThread().getId() != selectThread.getId() ) {
-			pendingOperations.add( new ChannelOperation(channel, op, operator, times ) );
 			selectThread.getSelector().wakeup();	
-		} else {
-			selectThread.registerChannel( new ChannelOperation(channel, op, operator, times ) );
 		}
 	}
 	
 	public void cancel( SelectableChannel channel, int op, ChannelOperator operator ) {
+		cancelOperations.add( new ChannelOperation(channel, op, operator, 0 ) );
 		if( Thread.currentThread().getId() != selectThread.getId() ) {
-			cancelOperations.add( new ChannelOperation(channel, op, operator, 0 ) );
 			selectThread.getSelector().wakeup();	
-		} else {
-			selectThread.cancelChannel( new ChannelOperation(channel, op, operator, 0 ) );
-		}
+		}		
 	}
 	
 	public void cancel(SelectableChannel channel, int op ) {
@@ -75,7 +82,7 @@ public class TSelector {
 		
 	}
 		
-	private static class ChannelManager {
+	private static class ChannelManager {		
 		private HashMap< SelectableChannel, HashMap< Integer, List< ChannelOperation> > > channelOperations = new HashMap< SelectableChannel, HashMap< Integer, List< ChannelOperation> > >();
 		
 		public void removeChannel(  ChannelOperation channelOp ) {
@@ -132,6 +139,7 @@ public class TSelector {
 		public void doOperations( SelectableChannel channel, int readyOps ) {
 			HashMap< Integer, List< ChannelOperation> > opChannels = channelOperations.get( channel );
 			if( opChannels != null ) {
+				LinkedList< Integer > removedOps = new LinkedList<Integer>();
 				
 				for( int op: opChannels.keySet() ) {
 					if( ( op & readyOps ) == op ) {
@@ -145,7 +153,7 @@ public class TSelector {
 									if( channelOp.times <= 0 ) {
 										operators.remove( 0 );
 										if( operators.isEmpty() ) {
-											opChannels.remove( op );
+											removedOps.add( op );
 										}
 									}
 								}
@@ -155,7 +163,11 @@ public class TSelector {
 							}
 						}
 					}
-				}				
+				}
+				
+				for( int op: removedOps ) {
+					opChannels.remove( op );
+				}
 			}
 		}
 		
@@ -212,7 +224,6 @@ public class TSelector {
 		          startPendingChannels();
 		          cancelChannels();
 		        } catch (Exception exception) {
-		        	exception.printStackTrace();
 		          LOGGER.error("Ignoring uncaught exception in SelectThread", exception);
 		        }
 		      }
@@ -227,7 +238,6 @@ public class TSelector {
 						selector.selectNow();
 					}
 		          } catch (IOException e) {
-		        	  e.printStackTrace();
 		            LOGGER.error("Caught IOException in TAsyncClientManager!", e);
 		          }
 			}
@@ -272,16 +282,15 @@ public class TSelector {
 			}
 
 
-			void registerChannel(ChannelOperation channelOp) {
+			private void registerChannel(ChannelOperation channelOp) {
 				channelMgr.addChannel(channelOp );
 				try {
 					channelOp.channel.register(selector, channelMgr.getOps(channelOp.channel ));
-				} catch (ClosedChannelException e) {
-					e.printStackTrace();
+				} catch (ClosedChannelException e) {					
 				}				
 			}
 			
-			void cancelChannel( ChannelOperation channelOp ) {
+			private void cancelChannel( ChannelOperation channelOp ) {
 				channelMgr.removeChannel(channelOp );
 				try {
 					channelOp.channel.register(selector, channelMgr.getOps(channelOp.channel ));
@@ -289,9 +298,6 @@ public class TSelector {
 					e.printStackTrace();
 				}	
 			}
-			
-			
-			
 	  }
 	
 }
