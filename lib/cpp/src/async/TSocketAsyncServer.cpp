@@ -1,22 +1,27 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership. The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 #include "TSocketAsyncServer.h"
+#include "TAsyncUtil.h"
 #include <boost/function.hpp>
 #include <boost/bind.hpp>
-#include <concurrency/BoostThreadFactory.h>
 
 namespace apache { namespace thrift { namespace async {
-
-class TSocketAsyncServer::Task: public apache::thrift::concurrency::Runnable {
-public:
-	Task( const boost::function< void() >& func )
-	:func_( func )
-	{
-	}
-	virtual void run() {
-		func_();
-	}
-private:
-	boost::function< void() > func_;
-};
 
 TSocketAsyncServer::TSocketAsyncServer( const std::string& addr, 
 		const std::string& port,
@@ -28,11 +33,8 @@ listenPort_( port ),
 acceptor_( io_service_ ),
 protoFactory_( protoFactory ),
 processor_( processor ),
-threadManager_( apache::thrift::concurrency::ThreadManager::newThreadManager() )
+threadManager_( TAsyncUtil::createThreadManager( processorThreads ) )
 {
-	threadManager_->threadFactory( boost::shared_ptr<apache::thrift::concurrency::BoostThreadFactory>( new apache::thrift::concurrency::BoostThreadFactory() ) );
-	threadManager_->start();
-	threadManager_->addWorker( processorThreads );
 }
 
 void TSocketAsyncServer::serve() {
@@ -50,7 +52,7 @@ void TSocketAsyncServer::serve() {
 		boost::asio::ip::tcp::endpoint ep = *iter;
 		acceptor_.open( ep.protocol(), ec );
 		acceptor_.bind( ep, ec );
-		if( ec ) break;
+		if( !ec ) break;
 	}
 	
 	acceptor_.listen( 128, ec );
@@ -98,7 +100,7 @@ void TSocketAsyncServer::dataRecevied( boost::shared_ptr< boost::asio::ip::tcp::
 		msg_buf->append( tmp_buf, bytes_read );
 		boost::shared_ptr<apache::thrift::transport::TMemoryBuffer> frame = extractFrame( *msg_buf );
 		for( ;frame; frame = extractFrame( *msg_buf ) ) {
-			threadManager_->add( boost::shared_ptr< Task >( new Task( boost::bind( &TSocketAsyncServer::processRequest, this, sock, frame ) ) ) );
+			threadManager_->add( TAsyncUtil::createTask( boost::bind( &TSocketAsyncServer::processRequest, this, sock, frame ) ) );
 		}
 		startRead( sock, tmp_buf, tmp_buf_len, msg_buf );
 	}	

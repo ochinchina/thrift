@@ -34,8 +34,8 @@ protected:
          * @param replyProcThreadNum number the threads to process the reply from server side
          */
         TAsyncDispatchableChannel( boost::shared_ptr< ::apache::thrift::protocol::TProtocolFactory > protocolFactory,
-                                                int timeoutMillis,
-                                                int replyProcThreadNum );
+                                                int timeoutMillis );
+                                                
         /**
          *  send message to peer
          *

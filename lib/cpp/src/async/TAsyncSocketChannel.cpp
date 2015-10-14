@@ -1,45 +1,24 @@
 #include "TAsyncSocketChannel.h"
 #include "BackGroundIOService.h"
-#include <concurrency/BoostThreadFactory.h>
+#include "TAsyncUtil.h"
+#include <concurrency/PlatformThreadFactory.h>
 
 namespace apache { namespace thrift { namespace async {
-
-static boost::shared_ptr<apache::thrift::concurrency::ThreadManager> createThreadManager( int threadNum ) {
-	 boost::shared_ptr<apache::thrift::concurrency::ThreadManager> threadManager = apache::thrift::concurrency::ThreadManager::newThreadManager();
-	threadManager->threadFactory( boost::shared_ptr<apache::thrift::concurrency::BoostThreadFactory>( new apache::thrift::concurrency::BoostThreadFactory() ) );
-	threadManager->addWorker( threadNum );
-	threadManager->start();
-	return threadManager;
-}
-
-class TAsyncSocketChannel::Task: public apache::thrift::concurrency::Runnable {
-public:
-	Task( const boost::function<void()>& func )
-	:func_( func )
-	{
-	}
-
-	virtual void run() {
-		func_();
-	}
-private:
-	boost::function<void()> func_;
-};
 
 
 TAsyncSocketChannel::TAsyncSocketChannel( const std::string& serverAddr,
                 const std::string& port,
                 boost::shared_ptr< ::apache::thrift::protocol::TProtocolFactory > protocolFactory,
                 int timeoutMillis,
-                int replyProcThreadNum )
-:TAsyncDispatchableChannel( protocolFactory, timeoutMillis, replyProcThreadNum ),
+				int replyProcThreadNum )
+:TAsyncDispatchableChannel( protocolFactory, timeoutMillis ),
 stop_( false ),
 connected_( false ),
 io_service_( BackGroundIOService::getInstance().get_io_service() ),
 serverAddr_( serverAddr ),
 serverPort_( port ),
 sock_( new boost::asio::ip::tcp::socket( io_service_ ) ),
-threadManager_( createThreadManager( replyProcThreadNum ) )
+threadManager_( TAsyncUtil::createThreadManager( replyProcThreadNum ) )
 {
 }
 
@@ -48,15 +27,15 @@ TAsyncSocketChannel::TAsyncSocketChannel( boost::asio::io_service& io_service,
                 const std::string& port,
                 boost::shared_ptr< ::apache::thrift::protocol::TProtocolFactory > protocolFactory,
                 int timeoutMillis,
-                int replyProcThreadNum )
-:TAsyncDispatchableChannel( protocolFactory, timeoutMillis, replyProcThreadNum ),
+				int replyProcThreadNum )
+:TAsyncDispatchableChannel( protocolFactory, timeoutMillis ),
 stop_( false ),
 connected_( false ),
 io_service_( io_service ),
 serverAddr_( serverAddr ),
 serverPort_( port ),
 sock_( new boost::asio::ip::tcp::socket( io_service_ ) ),
-threadManager_( createThreadManager( replyProcThreadNum ) )
+threadManager_( TAsyncUtil::createThreadManager( replyProcThreadNum ) )
 {
 }
 
@@ -64,12 +43,12 @@ TAsyncSocketChannel::TAsyncSocketChannel( boost::shared_ptr<boost::asio::ip::tcp
                         boost::shared_ptr< ::apache::thrift::protocol::TProtocolFactory > protocolFactory,
                         int timeoutMillis,
                         int replyProcThreadNum )
-:TAsyncDispatchableChannel( protocolFactory, timeoutMillis, replyProcThreadNum ),
+:TAsyncDispatchableChannel( protocolFactory, timeoutMillis ),
 stop_( false ),
 connected_( sock_->is_open() ),
 io_service_( sock->io_service() ),
 sock_( sock ),
-threadManager_( createThreadManager( replyProcThreadNum ) )
+threadManager_( TAsyncUtil::createThreadManager( replyProcThreadNum ) )
 {
 }
 
@@ -202,13 +181,13 @@ void TAsyncSocketChannel::handleReconnectTimeout( const boost::system::error_cod
 void TAsyncSocketChannel::processPackets() {
         while( recvPackets_.length() > 4 ) {
                 //at first read the length
-                int32_t n = readInt( recvPackets_ );
+                int32_t n = TAsyncUtil::readInt( recvPackets_ );
                 if( recvPackets_.length() < ( 4 + n ) ) {
                         break;
                 } else {
                         std::string msg = recvPackets_.substr( 4, n );
                         recvPackets_.erase( 0, 4 + n );
-			threadManager_->add( boost::shared_ptr< Task >( new Task( boost::bind( &TAsyncSocketChannel::processPacket, this, msg ) ) ) );
+						threadManager_->add( TAsyncUtil::createTask( boost::bind( &TAsyncSocketChannel::processPacket, this, msg ) ) );
                 }
         }
 }
@@ -216,12 +195,6 @@ void TAsyncSocketChannel::processPackets() {
 void TAsyncSocketChannel::processPacket( std::string msg ) {
 	recvMessage( msg );
 }
-
-
-int32_t TAsyncSocketChannel::readInt( const std::string& s ) {
-        return ( ( s[0] & 0xff ) << 24 ) | ( ( s[1] & 0xff ) << 16 ) | ( ( s[2] & 0xff ) << 8 ) | ( s[3] & 0xff );
-}
-
 
 
 void TAsyncSocketChannel::sendFinished( const boost::system::error_code& error,

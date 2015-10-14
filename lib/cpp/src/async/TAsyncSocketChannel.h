@@ -1,8 +1,8 @@
 #ifndef _TASYNC_SOCKET_CHANNEL_H
 #define _TASYNC_SOCKET_CHANNEL_H
 
-#include "TAsyncDispatchableChannel.h"
 #include <boost/asio.hpp>
+#include "TAsyncDispatchableChannel.h"
 #include <concurrency/ThreadManager.h>
 
 namespace apache { namespace thrift { namespace async {
@@ -27,7 +27,7 @@ public:
                         const std::string& port,
                         boost::shared_ptr< ::apache::thrift::protocol::TProtocolFactory > protocolFactory,
                         int timeoutMillis,
-                        int replyProcThreadNum );
+						int replyProcThreadNum );
         /**
          *  create a socket channel
          *
@@ -44,7 +44,7 @@ public:
                         const std::string& port,
                         boost::shared_ptr< ::apache::thrift::protocol::TProtocolFactory > protocolFactory,
                         int timeoutMillis,
-                        int replyProcThreadNum );
+						int replyProcThreadNum );
         /**
          * create a socket channel
          *
@@ -109,8 +109,6 @@ private:
         void processPackets();
 
 	void processPacket( std::string msg );
-
-        int32_t readInt( const std::string& s );
 
         static void sendFinished( const boost::system::error_code& error,
                                         std::size_t bytes_transferred,

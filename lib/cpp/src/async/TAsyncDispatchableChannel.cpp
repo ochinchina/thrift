@@ -137,8 +137,7 @@ bool TAsyncDispatchableChannel::timedOut() const {
 
 	
 TAsyncDispatchableChannel::TAsyncDispatchableChannel( boost::shared_ptr< ::apache::thrift::protocol::TProtocolFactory > protocolFactory,
-                                                int timeoutMillis,
-                                                int replyProcThreadNum )
+                                                int timeoutMillis )
 :timeoutMillis_( timeoutMillis ),
 seqIdAllocator_( new SeqIdAllocator() ),
 respInfoMgr_( new RespInfoManager() ),

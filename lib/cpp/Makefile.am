@@ -94,7 +94,16 @@ endif
 libthriftnb_la_SOURCES = src/server/TNonblockingServer.cpp \
                          src/async/TAsyncProtocolProcessor.cpp \
                          src/async/TEvhttpServer.cpp \
-                         src/async/TEvhttpClientChannel.cpp 
+                         src/async/TEvhttpClientChannel.cpp \
+                         src/async/TAsyncServerChannel.cpp \
+                         src/async/TGenericAsyncChannel.cpp \
+                         src/async/TAsyncServerOrClientChannel.cpp \
+                         src/async/TAsyncSocketMuxClient.cpp \
+                         src/async/TAsyncSocketMuxServer.cpp \
+                         src/async/TDefAsyncSocketChannelCreator.cpp \
+                         src/async/TGenericAsyncServer.cpp \ 
+                         src/async/TAsyncUtil.cpp 
+
 
 libthriftz_la_SOURCES = src/transport/TZlibTransport.cpp
 
@@ -186,7 +195,18 @@ include_async_HEADERS = \
                      src/async/TAsyncBufferProcessor.h \
                      src/async/TAsyncProtocolProcessor.h \
                      src/async/TEvhttpClientChannel.h \
-                     src/async/TEvhttpServer.h
+                     src/async/TEvhttpServer.h \
+                     src/async/TAsyncServerChannel.h \
+                     src/async/TGenericAsyncChannel.h \
+                     src/async/TGenericAsyncServer.h \
+                     src/async/TAsyncServerOrClientChannel.h \
+                     src/async/TAsyncSocketChannelCreator.h \
+                     src/async/TAsyncSocketConnectionListener.h \
+                     src/async/TAsyncSocketMuxClient.h \
+                     src/async/TAsyncSocketMuxServer.h \
+                     src/async/TDefAsyncSocketChannelCreator.h \
+                     src/async/TGenericAsyncServer.h \
+                     src/async/TAsyncUtil.h
 
 
 noinst_PROGRAMS = concurrency_test
