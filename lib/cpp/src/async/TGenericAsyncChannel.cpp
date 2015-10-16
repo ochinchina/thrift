@@ -17,29 +17,19 @@
  * under the License.
  */
 #include "TGenericAsyncChannel.h"
+#include "TAsyncUtil.h"
 #include <concurrency/PlatformThreadFactory.h>
 
-namespace apache { namespace thrift { namespace async {
+using apache::thrift::concurrency::PlatformThreadFactory;
 
-class TGenericAsyncChannel::Task: public apache::thrift::concurrency::Runnable {
-public:
-	Task( const boost::function<void()>& func )
-	:func_( func )
-	{
-	}
-	void run() {
-		func_();
-	}
-private:
-	boost::function<void()> func_;
-};
+namespace apache { namespace thrift { namespace async {
 
 
 TGenericAsyncChannel::TGenericAsyncChannel( boost::shared_ptr< ::apache::thrift::protocol::TProtocolFactory > protocolFactory,
                                                 int timeoutMillis)
 :TAsyncDispatchableChannel( protocolFactory, timeoutMillis )
 {
-	timerManager_.threadFactory(boost::shared_ptr<apache::thrift::concurrency::PlatformThreadFactory>(new apache::thrift::concurrency::PlatformThreadFactory()));
+	timerManager_.threadFactory( boost::shared_ptr< PlatformThreadFactory >( new PlatformThreadFactory() ) );
   	timerManager_.start();
 }
 	 
@@ -52,7 +42,7 @@ void TGenericAsyncChannel::sendMessage( const std::string& msg, const boost::fun
 }
 
 void TGenericAsyncChannel::startTimer( int timeoutInMillis, const boost::function<void()>& callback ) {
-	timerManager_.add( boost::shared_ptr<apache::thrift::concurrency::Runnable>(new Task( callback )), timeoutInMillis );
+	timerManager_.add( TAsyncUtil::createTask( callback ), timeoutInMillis );
 }
 
 }}}

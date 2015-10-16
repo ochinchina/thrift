@@ -77,7 +77,6 @@ private:
 	
 	void processPacket( int32_t channelId, std::string msg );
 	
-	
 	static void sendFinished( const boost::system::error_code& error,
                                 std::size_t bytes_transferred,
                                 boost::shared_ptr< std::string > s,

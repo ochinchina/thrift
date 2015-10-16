@@ -32,6 +32,7 @@ public:
 	static int32_t readInt( const std::string& in, size_t& pos );
 	static int32_t readInt( const std::string& in );
 	static void writeInt( std::string& out, int32_t v ) ;
+	static bool extractChannelMessage( std::string& msg_buf, int32_t& channelId, std::string& msg );
 	
 	
 };

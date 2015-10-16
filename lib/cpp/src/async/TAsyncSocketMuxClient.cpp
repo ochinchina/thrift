@@ -131,20 +131,16 @@ void TAsyncSocketMuxClient::removeChannels( ) {
 }
 
 void TAsyncSocketMuxClient::processPackets() {
-	size_t pos = 0;
-	
-	while( recvData_.length() > 8 ) {
-            //read channel
-            int32_t channelId = TAsyncUtil::readInt( recvData_, pos );
-            int32_t n = TAsyncUtil::readInt( recvData_, pos );
-            if( recvData_.length() < ( 8 + n ) ) {
-                    break;
-            } else {
-                    std::string msg = recvData_.substr( 8, n );
-                    recvData_.erase( 0, 8 + n );
-					threadManager_->add( TAsyncUtil::createTask( boost::bind( &TAsyncSocketMuxClient::processPacket, this, channelId, msg ) ) );
-            }
-    }
+	int32_t channelId = 0;
+	std::string msg;
+			
+	while( TAsyncUtil::extractChannelMessage( recvData_, channelId, msg ) ) {
+		if( threadManager_ ) {
+			threadManager_->add( TAsyncUtil::createTask( boost::bind( &TAsyncSocketMuxClient::processPacket, this, channelId, msg ) ) );
+		} else {
+			processPacket( channelId, msg );
+		}
+	}
 }
 
 void TAsyncSocketMuxClient::write( const std::string& msg,

@@ -38,6 +38,9 @@ namespace {
 }
 
 boost::shared_ptr< apache::thrift::concurrency::ThreadManager > TAsyncUtil::createThreadManager( int threadNum ) {
+	if( threadNum<= 0 ) {
+		return boost::shared_ptr< apache::thrift::concurrency::ThreadManager >();
+	}
 	boost::shared_ptr<apache::thrift::concurrency::ThreadManager> threadManager = apache::thrift::concurrency::ThreadManager::newThreadManager();
 	threadManager->threadFactory( boost::shared_ptr<apache::thrift::concurrency::PlatformThreadFactory>( new apache::thrift::concurrency::PlatformThreadFactory() ) );
     threadManager->addWorker( threadNum );
@@ -67,6 +70,21 @@ void TAsyncUtil::writeInt( std::string& out, int32_t v ) {
 	buf[3] = (char)( v & 0xff );
 	
 	out.append( buf, 4 );
+}
+
+bool TAsyncUtil::extractChannelMessage( std::string& msg_buf, int32_t& channelId, std::string& msg ) {
+	if( msg_buf.length() < 8 ) return false;
+	
+	size_t pos = 0;
+	
+	channelId = readInt( msg_buf, pos );
+	int32_t n = readInt( msg_buf, pos );
+	if( msg_buf.length() >= ( 8 + n ) ) {
+		msg = msg_buf.substr( 8, n );
+		msg_buf.erase( 0, 8 + n );
+		return true;
+	}
+	return false;
 }
 
 }}}

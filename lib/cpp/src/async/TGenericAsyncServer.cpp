@@ -58,7 +58,11 @@ void TGenericAsyncServer::connectionAccepted( boost::shared_ptr<TAsyncServerChan
 void TGenericAsyncServer::messageReceived( boost::shared_ptr<TAsyncServerChannel> channel, const std::string& msg  ) {
 	boost::shared_ptr<apache::thrift::transport::TMemoryBuffer> reqBuf( new apache::thrift::transport::TMemoryBuffer() );
 	reqBuf->write( (const uint8_t*)msg.data(), msg.size() );
-	threadManager_->add( TAsyncUtil::createTask( boost::bind( &TGenericAsyncServer::processRequest, this, channel, reqBuf ) ) );
+	if( threadManager_ ) {
+		threadManager_->add( TAsyncUtil::createTask( boost::bind( &TGenericAsyncServer::processRequest, this, channel, reqBuf ) ) );
+	} else {
+		processRequest( channel, reqBuf );
+	}
 }	
 
 void TGenericAsyncServer::processRequest(  boost::shared_ptr< TAsyncServerChannel > channel,

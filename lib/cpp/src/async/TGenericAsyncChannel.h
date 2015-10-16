@@ -54,7 +54,6 @@ public:
 private:
 	MessageWriter msgWriter_;
 	TimerManager timerManager_;
-	class Task;	
 };
 
 }}}

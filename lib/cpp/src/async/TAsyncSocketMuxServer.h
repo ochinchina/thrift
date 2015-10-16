@@ -35,9 +35,18 @@ public:
 			const std::string& listenAddr, 
 			const std::string& listenPort,
 			const boost::shared_ptr<apache::thrift::concurrency::ThreadManager>& threadManager );
+	TAsyncSocketMuxServer( const std::string& listenAddr, 
+			const std::string& listenPort,
+			int threadNum );
+	TAsyncSocketMuxServer( boost::asio::io_service& io_service, 
+			const std::string& listenAddr, 
+			const std::string& listenPort,
+			int threadNum );
 	void setConnectionListener( boost::shared_ptr<TAsyncSocketConnectionListener> listener );
 	void start();
 private:
+	void setClientMessageWriter( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock, int channelId, const boost::shared_ptr<TGenericAsyncChannel>& clientChannel );
+	void setServerMessageWriter( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock, int channelId, const boost::shared_ptr<TAsyncServerChannel>& channel );
 	void startAccept() ;
 	
 	void connectionAccepted( const boost::system::error_code& ec, boost::shared_ptr< boost::asio::ip::tcp::socket> sock );
@@ -62,8 +71,6 @@ private:
 			const std::string& msg, 
 			const boost::function< void( bool ) >& callback,
 			int channelId );
-	
-	static bool extractMessage( std::string& msg_buf, int32_t& channelId, std::string& msg );
 	
 	static void sendFinished( const boost::system::error_code& error,
 	                                std::size_t bytes_transferred,
