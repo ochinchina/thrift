@@ -144,6 +144,7 @@ void TAsyncSocketMuxServer::dataRecevied( boost::shared_ptr< boost::asio::ip::tc
 	if( error ) {
 		delete []tmp_buf;
 		delete msg_buf;
+		channelCreator_.connectionLost( sock, connListener_ );		
 	} else {
 		msg_buf->append( tmp_buf, bytes_read );
 		
@@ -194,6 +195,5 @@ void TAsyncSocketMuxServer::sendFinished( const boost::system::error_code& error
 		callback( !error );
 	}
 }
-
 
 }}}

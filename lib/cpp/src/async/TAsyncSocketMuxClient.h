@@ -68,8 +68,6 @@ private:
 	
 	void processPackets();
 	
-	void removeChannels();
-	
 	void write( const std::string& msg,
 				const boost::function< void( bool ) >& callback, 
 				int32_t channelId );

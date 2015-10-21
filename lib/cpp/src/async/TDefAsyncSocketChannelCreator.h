@@ -23,6 +23,7 @@
 #include <boost/asio.hpp>
 #include "TAsyncSocketChannelCreator.h"
 #include "TAsyncServerOrClientChannel.h"
+#include "TAsyncSocketConnectionListener.h"
 
 namespace apache { namespace thrift { namespace async {
 
@@ -62,6 +63,7 @@ public:
 	void removeChannelsOn( boost::shared_ptr<boost::asio::ip::tcp::socket> sock, 
 				std::list< boost::shared_ptr<TGenericAsyncChannel> >& clientChannels,
 				std::list< boost::shared_ptr<TAsyncServerChannel> >& serverChannels );
+	void connectionLost( const  boost::shared_ptr<boost::asio::ip::tcp::socket>& sock, boost::shared_ptr<TAsyncSocketConnectionListener> connListener );
 private:
 	std::map<SockChannelId, TAsyncServerOrClientChannel> channels;
 	ServerMessageWriterSetter serverMessageWriterSet;

@@ -106,28 +106,13 @@ void TAsyncSocketMuxClient::dataReceived( const boost::system::error_code& error
     if( error ) {
     	delete[] buf;
 		recvData_.clear();
-		removeChannels();                
+		channelCreator_.connectionLost( sock_, listener_ );
 		startConnect();
     }else{
         recvData_.append(  buf, bytes_transferred );
         startRead( buf, buf_size );
         processPackets();
     }
-}
-
-void TAsyncSocketMuxClient::removeChannels( ) {
-	std::list< boost::shared_ptr<TGenericAsyncChannel> > clientChannels;
-	std::list< boost::shared_ptr<TAsyncServerChannel> > serverChannels;
-	channelCreator_.removeChannelsOn( sock_, clientChannels, serverChannels );
-	
-	listener_->connectionLost( sock_ );
-	for( std::list< boost::shared_ptr<TGenericAsyncChannel> >::const_iterator iter = clientChannels.begin(); iter != clientChannels.end(); iter++ ) {
-		listener_->connectionLost( *iter );
-	}
-	
-	for( std::list< boost::shared_ptr<TAsyncServerChannel> >::const_iterator iter = serverChannels.begin(); iter != serverChannels.end(); iter++ ) {
-		listener_->connectionLost( *iter );
-	}  	
 }
 
 void TAsyncSocketMuxClient::processPackets() {
@@ -149,6 +134,7 @@ void TAsyncSocketMuxClient::write( const std::string& msg,
 	boost::shared_ptr<std::string> s( new std::string() );
 	
 	TAsyncUtil::writeInt( *s, channelId );
+	TAsyncUtil::writeInt( *s, msg.length() );
 	s->append( msg );
 	boost::asio::async_write( *sock_,
                         boost::asio::buffer( s->data(), s->length() ),

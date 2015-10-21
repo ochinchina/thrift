@@ -102,4 +102,20 @@ void TDefAsyncSocketChannelCreator::removeChannelsOn( boost::shared_ptr<boost::a
 	}
 }
 
+void TDefAsyncSocketChannelCreator::connectionLost( const  boost::shared_ptr<boost::asio::ip::tcp::socket>& sock, boost::shared_ptr<TAsyncSocketConnectionListener> connListener ) {
+	std::list< boost::shared_ptr<TGenericAsyncChannel> > clientChannels;
+        std::list< boost::shared_ptr<TAsyncServerChannel> > serverChannels;
+
+        removeChannelsOn( sock, clientChannels, serverChannels   );
+
+        for( std::list< boost::shared_ptr<TGenericAsyncChannel> >::const_iterator iter = clientChannels.begin(); iter != clientChannels.end(); iter++ ) {
+                connListener->connectionLost( *iter );
+        }
+        for( std::list< boost::shared_ptr<TAsyncServerChannel> >::const_iterator iter = serverChannels.begin(); iter != serverChannels.end(); iter++ ) {
+                connListener->connectionLost( *iter );
+        }
+
+        connListener->connectionLost( sock );
+}
+
 }}}

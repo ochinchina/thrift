@@ -67,9 +67,7 @@ void TGenericAsyncServer::messageReceived( boost::shared_ptr<TAsyncServerChannel
 
 void TGenericAsyncServer::processRequest(  boost::shared_ptr< TAsyncServerChannel > channel,
 			boost::shared_ptr<apache::thrift::transport::TMemoryBuffer> reqBuf ) {
-	boost::shared_ptr<apache::thrift::transport::TMemoryBuffer>outBuf(new apache::thrift::transport::TMemoryBuffer());
-	uint8_t lenBuf[4];
-	outBuf->write( lenBuf, 4 );	
+	boost::shared_ptr<apache::thrift::transport::TMemoryBuffer> outBuf(new apache::thrift::transport::TMemoryBuffer());
 	boost::shared_ptr<apache::thrift::protocol::TProtocol> iprot(protoFactory_->getProtocol(reqBuf));
 	boost::shared_ptr<apache::thrift::protocol::TProtocol> oprot(protoFactory_->getProtocol(outBuf));
 	processor_->process( std::tr1::bind( &TGenericAsyncServer::processCompleted, this, channel,  std::tr1::placeholders::_1, outBuf ),
@@ -85,13 +83,6 @@ void TGenericAsyncServer::processCompleted( boost::shared_ptr< TAsyncServerChann
 	uint32_t sz = 0;
 
 	outBuf->getBuffer( &bufPtr, &sz );
-	size_t n = sz - 4;
-
-	bufPtr[0] = (uint8_t)( ( n >> 24 ) & 0xff ); 		
-	bufPtr[1] = (uint8_t)( ( n >> 16 ) & 0xff );
-	bufPtr[2] = (uint8_t)( ( n >> 8 ) & 0xff );
-	bufPtr[3] = (uint8_t)( ( n ) & 0xff );
-	
 	channel->write( std::string( (const char*)bufPtr, sz ), boost::bind( &TGenericAsyncServer::writeFinished, _1 ) );
 
 }
