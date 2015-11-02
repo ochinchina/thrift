@@ -197,7 +197,7 @@ public class TNonblockingSocket extends TNonblockingTransport {
 	
 	
 	@Override
-	public void asyncWrite( final ByteBuffer buffer, final AsyncWriteListener listener ) throws IOException {
+	public void asyncWrite( final ByteBuffer buffer, final AsyncWriteCallback listener ) throws IOException {
 		asyncChannel_.asyncWrite(buffer, listener);		
 	}
 	
@@ -327,9 +327,9 @@ public class TNonblockingSocket extends TNonblockingTransport {
 			}, 1 );
 		}
 		
-		void asyncWrite( final ByteBuffer buffer, final AsyncWriteListener writeListener )  {
+		void asyncWrite( final ByteBuffer buffer, final AsyncWriteCallback writeCb )  {
 			if( stop_ || !isConnected() ) {
-				writeListener.writeFinished(false);
+				writeCb.writeFinished(false);
 				return;
 			}
 			
@@ -338,10 +338,10 @@ public class TNonblockingSocket extends TNonblockingTransport {
 				public void doOperation() {
 					try {
 						socketChannel_.write( buffer );
-						writeListener.writeFinished(true);
+						writeCb.writeFinished(true);
 					} catch (IOException e) {
 						LOGGER.error( "fail to write to the server", e);
-						writeListener.writeFinished(false);
+						writeCb.writeFinished(false);
 					}				
 				}
 				

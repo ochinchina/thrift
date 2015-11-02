@@ -142,7 +142,7 @@ public TProtocolFactory getProtocolFactory() {
 	  ByteBuffer request = method.getRequest();
 	  
 	    try {
-			___transport.asyncWrite( request, new TNonblockingTransport.AsyncWriteListener() {
+			___transport.asyncWrite( request, new TNonblockingTransport.AsyncWriteCallback() {
 
 				@Override
 				public void writeFinished(boolean success) {

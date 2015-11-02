@@ -158,7 +158,7 @@ public class TNonblockingServer extends AbstractNonblockingServer {
       try {
     	  TProtocol outProt = outputProtocolFactory_.getProtocol( outputTransportFactory_.getTransport(new TIOStreamTransport(response )) );
         processorFactory_.getProcessor(inTrans).process(inProt, outProt);
-        transport.asyncWrite( ByteBuffer.wrap( response.toByteArray() ), new TNonblockingTransport.AsyncWriteListener() {
+        transport.asyncWrite( ByteBuffer.wrap( response.toByteArray() ), new TNonblockingTransport.AsyncWriteCallback() {
 			
 			@Override
 			public void writeFinished(boolean success) {

@@ -24,7 +24,7 @@ import java.nio.ByteBuffer;
 
 public abstract class TNonblockingTransport extends TTransport {
 
-	public static interface AsyncWriteListener {
+	public static interface AsyncWriteCallback {
 		/**
 		 * 
 		 * @param success true - success to write, false - fail to write
@@ -49,5 +49,6 @@ public abstract class TNonblockingTransport extends TTransport {
   //public abstract SelectionKey registerSelector(Selector selector, int interests) throws IOException;
 
   //public abstract void startAsyncRead( MessageListener listener ) throws IOException;
-  public abstract void asyncWrite(ByteBuffer buffer, AsyncWriteListener listener ) throws IOException;
+  public abstract void asyncWrite(ByteBuffer buffer, AsyncWriteCallback cb ) throws IOException;
+
 }
