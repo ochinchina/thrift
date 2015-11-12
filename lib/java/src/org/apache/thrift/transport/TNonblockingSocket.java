@@ -172,14 +172,14 @@ public class TNonblockingSocket extends TNonblockingTransport {
 
 	protected ByteBuffer readFrame( SocketChannel sockChannel ) throws IOException  {
 				if( frameSizeBuffer.remaining() != 0 ) {
-					sockChannel.read( frameSizeBuffer );
+					if( sockChannel.read( frameSizeBuffer ) == -1 ) throw new IOException( "End of stream");
 					if( frameSizeBuffer.remaining() == 0 ) {
 						int n = TFramedTransport.decodeFrameSize(frameSizeBuffer.array());
 						frameBuffer = ByteBuffer.allocate( n );
-						sockChannel.read( frameBuffer );
+						if( sockChannel.read( frameBuffer ) == -1 ) throw new IOException( "End of stream");
 					}
 				} else {
-					sockChannel.read( frameBuffer );
+					if( sockChannel.read( frameBuffer ) == -1 ) throw new IOException( "End of stream");
 				}
 				
 				if( frameSizeBuffer.remaining() == 0 && frameBuffer.remaining() == 0 ) {
