@@ -51,6 +51,7 @@ void TSocketAsyncServer::serve() {
 	for( ; iter != boost::asio::ip::tcp::resolver::iterator(); iter++ ) {
 		boost::asio::ip::tcp::endpoint ep = *iter;
 		acceptor_.open( ep.protocol(), ec );
+		acceptor_.set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
 		acceptor_.bind( ep, ec );
 		if( !ec ) break;
 	}
@@ -70,7 +71,7 @@ void TSocketAsyncServer::startAccept() {
 
 void TSocketAsyncServer::connectionAccepted( const boost::system::error_code& ec, boost::shared_ptr< boost::asio::ip::tcp::socket> sock ) {
 
-	if( !ec ) {
+	if( !ec ) {		
 		startRead( sock, new char[4096], 4096, new std::string() );
 		startAccept();
 	}
