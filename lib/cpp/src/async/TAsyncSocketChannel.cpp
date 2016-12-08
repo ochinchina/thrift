@@ -161,6 +161,11 @@ void TAsyncSocketChannel::handleConnect(const boost::system::error_code& error, 
                 startReconnectTimer( connCb );
         } else {//if connected, start to read the data from server
                 connected_ = true;
+		sock_->set_option( boost::asio::ip::tcp::no_delay( true ) );
+                sock_->set_option( boost::asio::socket_base::keep_alive( true ) );
+                sock_->set_option( boost::asio::socket_base::linger( true, 30 ) );
+                sock_->set_option( boost::asio::socket_base::reuse_address( true ) );
+
 		if( !connCb.empty() ) {
 			connCb();
 		}
