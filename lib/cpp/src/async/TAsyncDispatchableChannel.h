@@ -9,6 +9,10 @@
 #include <boost/bind.hpp>
 #include <boost/smart_ptr.hpp>
 #include <boost/thread.hpp>
+#include <concurrency/TimerManager.h>
+
+
+using apache::thrift::concurrency::TimerManager;
 
 namespace apache { namespace thrift { namespace async {
 class TAsyncDispatchableChannel: public apache::thrift::async::TAsyncChannel {
@@ -50,10 +54,6 @@ protected:
          * @param msg - the message received from peer
          */
         void recvMessage( const std::string& msg ) ;
-        /**
-         *start a timer with timeout
-         */
-        virtual void startTimer( int timeoutInMillis, const boost::function<void()>& callback ) = 0;
 
         void stop();
 private:
@@ -73,6 +73,7 @@ private:
         boost::shared_ptr<SeqIdAllocator> seqIdAllocator_;
         boost::shared_ptr<RespInfoManager> respInfoMgr_;
         boost::shared_ptr< ::apache::thrift::protocol::TProtocolFactory > protocolFactory_;
+        TimerManager timerManager_;
 };
 
 }}}//end namespace

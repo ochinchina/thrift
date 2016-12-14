@@ -77,14 +77,7 @@ protected:
          *  @Override TAsyncDispatchableChannel#sendMessage
          */
         virtual void sendMessage( const std::string& msg, const boost::function< void( bool ) >& callback );
-        /**
-         *  @Override TAsyncDispatchableChannel#startTimer
-         */
-        virtual void startTimer( int timeoutInMillis, const boost::function<void()>& callback );
 private:
-
-        static void handleTimeout( const boost::system::error_code& error, boost::function<void()> callback, boost::shared_ptr<boost::asio::deadline_timer> timer );
-
 
         void startRead( boost::shared_array<char> buf, size_t size, const  boost::function<void()>& connCb );
 

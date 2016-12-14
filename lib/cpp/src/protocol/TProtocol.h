@@ -34,6 +34,10 @@
 #include <map>
 #include <vector>
 
+#ifdef HAVE_SYS_PARAM_H
+#include <sys/param.h>
+#endif
+
 
 // Use this to get around strict aliasing rules.
 // For example, uint64_t i = bitwise_cast<uint64_t>(returns_double());
@@ -79,9 +83,6 @@ namespace apache { namespace thrift { namespace protocol {
 
 using apache::thrift::transport::TTransport;
 
-#ifdef HAVE_SYS_PARAM_H
-#include <sys/param.h>
-#endif
 
 #ifndef __BYTE_ORDER
 # if defined(BYTE_ORDER) && defined(LITTLE_ENDIAN) && defined(BIG_ENDIAN)

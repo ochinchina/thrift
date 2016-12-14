@@ -18,6 +18,10 @@
  */
 
 #include "TAsyncDispatchableChannel.h"
+#include "TAsyncUtil.h"
+#include "concurrency/PlatformThreadFactory.h"
+
+using apache::thrift::concurrency::PlatformThreadFactory;
 
 namespace apache {namespace thrift { namespace async {
 //
@@ -109,7 +113,7 @@ void TAsyncDispatchableChannel::sendAndRecvMessage(const VoidCallback& cob,
         //start the timeout timer if timeout is set
         //
         if( timeoutMillis_ > 0 ) {
-            startTimer( timeoutMillis_, boost::bind( &TAsyncDispatchableChannel::handleRequestTimeout, this, seqId ) );
+            timerManager_.add( TAsyncUtil::createTask( boost::bind( &TAsyncDispatchableChannel::handleRequestTimeout, this, seqId ) ), timeoutMillis_ );
         }
 
         sendMessage( localSendBuffer->getBufferAsString(), boost::bind( &TAsyncDispatchableChannel::sendFinished, this, _1, seqId ) );
@@ -143,6 +147,8 @@ seqIdAllocator_( new SeqIdAllocator() ),
 respInfoMgr_( new RespInfoManager() ),
 protocolFactory_( protocolFactory )
 {
+	timerManager_.threadFactory( boost::shared_ptr< PlatformThreadFactory >( new PlatformThreadFactory() ) );
+  	timerManager_.start();
 }
 
 void TAsyncDispatchableChannel::recvMessage( const std::string& msg ) {
