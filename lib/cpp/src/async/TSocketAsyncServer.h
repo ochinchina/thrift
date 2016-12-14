@@ -1,11 +1,11 @@
 #ifndef _TSOCKET_ASYNC_SERVER_HPP
 #define _TSOCKET_ASYNC_SERVER_HPP
  
-#include <boost/asio.hpp>
 #include <async/TAsyncProcessor.h>
 #include <protocol/TProtocol.h>
 #include <transport/TBufferTransports.h>
 #include <concurrency/ThreadManager.h>
+#include <boost/asio.hpp>
 
 namespace apache { namespace thrift { namespace async {
 class TSocketAsyncServer {

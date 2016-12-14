@@ -46,7 +46,7 @@ TAsyncSocketChannel::TAsyncSocketChannel( boost::shared_ptr<boost::asio::ip::tcp
 :TAsyncDispatchableChannel( protocolFactory, timeoutMillis ),
 stop_( false ),
 connected_( sock_->is_open() ),
-io_service_( sock->io_service() ),
+io_service_( sock->get_io_service() ),
 sock_( sock ),
 threadManager_( TAsyncUtil::createThreadManager( replyProcThreadNum ) )
 {
@@ -97,21 +97,6 @@ void TAsyncSocketChannel::sendMessage( const std::string& msg, const boost::func
                                         boost::asio::transfer_all(),
                                         boost::bind( &sendFinished, _1, _2, s, callback ) );
 }
-/**
- *  @Override TAsyncDispatchableChannel#startTimer
- */
-void TAsyncSocketChannel::startTimer( int timeoutInMillis, const boost::function<void()>& callback ) {
-        boost::shared_ptr<boost::asio::deadline_timer> timer( new boost::asio::deadline_timer(io_service_) );
-
-        timer->expires_from_now( boost::posix_time::milliseconds( timeoutInMillis ));
-        timer->async_wait( boost::bind( &TAsyncSocketChannel::handleTimeout, _1, callback, timer ) );
-}
-
-
-void TAsyncSocketChannel::handleTimeout( const boost::system::error_code& error, boost::function<void()> callback, boost::shared_ptr<boost::asio::deadline_timer> timer ) {
-        callback();
-}
-
 
 void TAsyncSocketChannel::startRead( boost::shared_array<char> buf, size_t size, const  boost::function<void()>& connCb ) {
         sock_->async_read_some( boost::asio::buffer( buf.get(), size),
