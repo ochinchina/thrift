@@ -23,7 +23,8 @@ public:
      */
     virtual void sendAndRecvMessage(const VoidCallback& cob,
 	        apache::thrift::transport::TMemoryBuffer* sendBuf,
-	        apache::thrift::transport::TMemoryBuffer* recvBuf);
+	        apache::thrift::transport::TMemoryBuffer* recvBuf,
+		int timeoutMillis = 0 );
 	virtual void sendMessage(const VoidCallback& cob, apache::thrift::transport::TMemoryBuffer* message);
 	virtual void recvMessage(const VoidCallback& cob, apache::thrift::transport::TMemoryBuffer* message);
 	virtual bool good() const;

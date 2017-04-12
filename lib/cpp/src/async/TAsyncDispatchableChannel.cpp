@@ -86,7 +86,8 @@ private:
 
 void TAsyncDispatchableChannel::sendAndRecvMessage(const VoidCallback& cob,
     apache::thrift::transport::TMemoryBuffer* sendBuf,
-    apache::thrift::transport::TMemoryBuffer* recvBuf) {
+    apache::thrift::transport::TMemoryBuffer* recvBuf,
+    int timeoutMillis ) {
 
     boost::shared_ptr<apache::thrift::transport::TMemoryBuffer> tmpSendBuf = clone( *sendBuf );
     boost::shared_ptr< ::apache::thrift::protocol::TProtocol> prot = protocolFactory_->getProtocol( tmpSendBuf );
@@ -112,8 +113,9 @@ void TAsyncDispatchableChannel::sendAndRecvMessage(const VoidCallback& cob,
         //
         //start the timeout timer if timeout is set
         //
-        if( timeoutMillis_ > 0 ) {
-            timerManager_.add( TAsyncUtil::createTask( boost::bind( &TAsyncDispatchableChannel::handleRequestTimeout, this, seqId ) ), timeoutMillis_ );
+        if( timeoutMillis > 0 || timeoutMillis_ > 0 ) {
+	    
+            timerManager_.add( TAsyncUtil::createTask( boost::bind( &TAsyncDispatchableChannel::handleRequestTimeout, this, seqId ) ), timeoutMillis > 0 ? timeoutMillis: timeoutMillis_ );
         }
 
         sendMessage( localSendBuffer->getBufferAsString(), boost::bind( &TAsyncDispatchableChannel::sendFinished, this, _1, seqId ) );
