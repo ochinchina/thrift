@@ -194,8 +194,8 @@ class t_cpp_generator : public t_oop_generator {
   std::string type_name(t_type* ttype, bool in_typedef=false, bool arg=false);
   std::string base_type_name(t_base_type::t_base tbase);
   std::string declare_field(t_field* tfield, bool init=false, bool pointer=false, bool constant=false, bool reference=false);
-  std::string function_signature(t_function* tfunction, std::string style, std::string prefix="", bool name_params=true);
-  std::string cob_function_signature(t_function* tfunction, std::string prefix="", bool name_params=true);
+  std::string function_signature(t_function* tfunction, std::string style, std::string prefix="", bool name_params=true, bool header = true );
+  std::string cob_function_signature(t_function* tfunction, std::string prefix="", bool name_params=true, bool header = true );
   std::string argument_list(t_struct* tstruct, bool name_params=true, bool start_comma=false);
   std::string type_to_enum(t_type* ttype);
   std::string local_reflection_name(const char*, t_type* ttype, bool external=false);
@@ -2271,7 +2271,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
     	t_struct* arglist = tfunction->get_arglist();
     	string cob_type = "(" + service_name_ + "CobClient&)";
     	async_client_out << "\tvoid " << tfunction->get_name() << "(std::tr1::function<void" + cob_type + "> cob"
-    			<< argument_list(arglist, true, true) + "){" << endl;
+    			<< argument_list(arglist, true, true) + ", int timeoutMillis = 0 ){" << endl;
     	async_client_out << "\t\tboost::shared_ptr<" << service_name_ << "CobClient> client( new " << service_name_ << "CobClient(channel_, protocolFactory_.get() ) );" << endl;
     	async_client_out << "\t\tclient->" << tfunction->get_name() << "( std::tr1::bind(&" << service_name_ << "AsyncClient::processResult, client, std::tr1::placeholders::_1, cob)";
     	const vector<t_field*>& fields = arglist->get_members();
@@ -2281,7 +2281,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
 				async_client_out << fields[i]->get_name();
 			}
 		}
-		async_client_out << ");" << endl;
+		async_client_out << ", timeoutMillis );" << endl;
 		async_client_out << "\t}"<<endl;
 		
 		
@@ -2353,7 +2353,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
       indent(out) << template_header;
     }
     indent(out) <<
-      function_signature(*f_iter, ifstyle, scope) << endl;
+      function_signature(*f_iter, ifstyle, scope, true, false ) << endl;
     scope_up(out);
     indent(out) <<
       "send_" << funname << "(";
@@ -2394,7 +2394,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
         out <<
           indent() << _this << "channel_->sendAndRecvMessage(" <<
           "std::tr1::bind(cob, this), " << _this << "otrans_.get(), " <<
-          _this << "itrans_.get());" << endl;
+          _this << "itrans_.get(), timeoutMillis );" << endl;
       } else {
         out <<
         indent() << _this << "channel_->sendMessage(" <<
@@ -4370,7 +4370,8 @@ string t_cpp_generator::declare_field(t_field* tfield, bool init, bool pointer, 
 string t_cpp_generator::function_signature(t_function* tfunction,
                                            string style,
                                            string prefix,
-                                           bool name_params) {
+                                           bool name_params,
+					   bool header) {
   t_type* ttype = tfunction->get_returntype();
   t_struct* arglist = tfunction->get_arglist();
   bool has_xceptions = !tfunction->get_xceptions()->get_members().empty();
@@ -4409,7 +4410,7 @@ string t_cpp_generator::function_signature(t_function* tfunction,
     return
       "void " + prefix + tfunction->get_name() +
       "(std::tr1::function<void" + cob_type + "> cob" + exn_cob +
-      argument_list(arglist, name_params, true) + ")";
+      argument_list(arglist, name_params, true) + ", int timeoutMillis " + (header ? "= 0":"") + " )";
   } else {
     throw "UNKNOWN STYLE";
   }

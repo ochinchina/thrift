@@ -58,7 +58,8 @@ class TAsyncChannel {
    */
   virtual void sendAndRecvMessage(const VoidCallback& cob,
     apache::thrift::transport::TMemoryBuffer* sendBuf,
-    apache::thrift::transport::TMemoryBuffer* recvBuf);
+    apache::thrift::transport::TMemoryBuffer* recvBuf,
+    int timeoutMillis = 0 );
 };
 
 }}} // apache::thrift::async

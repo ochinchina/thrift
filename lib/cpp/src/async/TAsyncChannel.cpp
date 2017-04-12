@@ -24,7 +24,8 @@ namespace apache { namespace thrift { namespace async {
 
 void TAsyncChannel::sendAndRecvMessage(const VoidCallback& cob,
                                        TMemoryBuffer* sendBuf,
-                                       TMemoryBuffer* recvBuf) {
+                                       TMemoryBuffer* recvBuf,
+				       int timeoutMillis ) {
   std::tr1::function<void()> send_done =
     std::tr1::bind(&TAsyncChannel::recvMessage, this, cob, recvBuf);
 
