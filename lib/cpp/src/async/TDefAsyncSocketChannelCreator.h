@@ -44,14 +44,16 @@ private:
 public:
 	typedef apache::thrift::async::TGenericAsyncChannel AsyncClientChannel;
 	typedef apache::thrift::async::TAsyncServerChannel AsyncServerChannel;
-	typedef boost::function< void (const boost::shared_ptr<boost::asio::ip::tcp::socket>&, int, const boost::shared_ptr<AsyncServerChannel>& ) > ServerMessageWriterSetter;
-	typedef boost::function< void( const boost::shared_ptr<boost::asio::ip::tcp::socket>&, int, const boost::shared_ptr<AsyncClientChannel>& ) > ClientMessageWriterSetter;
+	typedef boost::function< void (const boost::shared_ptr<boost::asio::ip::tcp::socket>&, const boost::shared_ptr<BoostAsyncWriter>&, int, const boost::shared_ptr<AsyncServerChannel>& ) > ServerMessageWriterSetter;
+	typedef boost::function< void( const boost::shared_ptr<boost::asio::ip::tcp::socket>&, const boost::shared_ptr<BoostAsyncWriter>&, int, const boost::shared_ptr<AsyncClientChannel>& ) > ClientMessageWriterSetter;
 	
 	virtual boost::shared_ptr<TGenericAsyncChannel> createClientChannel( const boost::shared_ptr< boost::asio::ip::tcp::socket >& sock,
+                                                    const boost::shared_ptr<BoostAsyncWriter>& asyncWriter,
 													int channelId,
 													const boost::shared_ptr< apache::thrift::protocol::TProtocolFactory >& protoFactory,
 													int timeoutMillis );
-	virtual boost::shared_ptr<TAsyncServerChannel> createServerChannel( boost::shared_ptr<boost::asio::ip::tcp::socket> sock, 
+	virtual boost::shared_ptr<TAsyncServerChannel> createServerChannel( boost::shared_ptr<boost::asio::ip::tcp::socket> sock,
+                                                const boost::shared_ptr<BoostAsyncWriter>& asyncWriter, 
 												int channelId );
 	void setServerMessageWriterSetter( const ServerMessageWriterSetter& setter );
 	

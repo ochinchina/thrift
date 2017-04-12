@@ -3,7 +3,8 @@
 
 #include <boost/asio.hpp>
 #include "TAsyncDispatchableChannel.h"
-#include <concurrency/ThreadManager.h>
+#include "BoostAsyncWriter.hpp"
+#include <concurrency/ThreadPool.h>
 
 namespace apache { namespace thrift { namespace async {
 
@@ -103,9 +104,7 @@ private:
 
 	void processPacket( std::string msg );
 
-        static void sendFinished( const boost::system::error_code& error,
-                                        std::size_t bytes_transferred,
-                                        boost::shared_ptr< std::string > data,
+        static void sendFinished( bool success,
                                         boost::function< void( bool ) > callback );
 private:
         volatile bool stop_;
@@ -115,8 +114,9 @@ private:
         std::string serverPort_;
         std::string recvPackets_;
         boost::shared_ptr<boost::asio::ip::tcp::socket> sock_;
+        boost::shared_ptr<BoostAsyncWriter> asyncWriter_;
         ::apache::thrift::protocol::TProtocolFactory* protocolFactory_;
-	boost::shared_ptr<apache::thrift::concurrency::ThreadManager> threadManager_;
+	boost::shared_ptr<apache::thrift::concurrency::ThreadPool> threadPool_;
 	class Task;
 };
 

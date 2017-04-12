@@ -70,7 +70,7 @@ void TGenericAsyncServer::processRequest(  boost::shared_ptr< TAsyncServerChanne
 	boost::shared_ptr<apache::thrift::transport::TMemoryBuffer> outBuf(new apache::thrift::transport::TMemoryBuffer());
 	boost::shared_ptr<apache::thrift::protocol::TProtocol> iprot(protoFactory_->getProtocol(reqBuf));
 	boost::shared_ptr<apache::thrift::protocol::TProtocol> oprot(protoFactory_->getProtocol(outBuf));
-	processor_->process( std::tr1::bind( &TGenericAsyncServer::processCompleted, this, channel,  std::tr1::placeholders::_1, outBuf ),
+	processor_->process( boost::bind( &TGenericAsyncServer::processCompleted, this, channel,  _1, outBuf ),
                                         iprot,
                                         oprot);
                                     

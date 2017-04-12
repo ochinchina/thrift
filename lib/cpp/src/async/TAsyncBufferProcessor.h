@@ -20,7 +20,7 @@
 #ifndef _THRIFT_TASYNC_BUFFER_PROCESSOR_H_
 #define _THRIFT_TASYNC_BUFFER_PROCESSOR_H_ 1
 
-#include <tr1/functional>
+#include <boost/function.hpp>
 #include <boost/shared_ptr.hpp>
 
 #include "transport/TBufferTransports.h"
@@ -35,7 +35,7 @@ class TAsyncBufferProcessor {
   // "in" and "out" should be TMemoryBuffer or similar,
   // not a wrapper around a socket.
   virtual void process(
-      std::tr1::function<void(bool healthy)> _return,
+      boost::function<void(bool healthy)> _return,
       boost::shared_ptr<apache::thrift::transport::TBufferBase> ibuf,
       boost::shared_ptr<apache::thrift::transport::TBufferBase> obuf) = 0;
   virtual ~TAsyncBufferProcessor() {}

@@ -51,19 +51,21 @@ void TAsyncSocketMuxClient::setSocketConnectionListener( const boost::shared_ptr
 }
 
 void TAsyncSocketMuxClient::start() {
-	channelCreator_.setClientMessageWriterSetter( boost::bind( &TAsyncSocketMuxClient::setClientMessageWriter, this, _1, _2, _3 ) );
-	channelCreator_.setServerMessageWriterSetter( boost::bind( &TAsyncSocketMuxClient::setServerMessageWriter, this, _1, _2, _3 ) );
+	channelCreator_.setClientMessageWriterSetter( boost::bind( &TAsyncSocketMuxClient::setClientMessageWriter, this, _1, _2, _3, _4 ) );
+	channelCreator_.setServerMessageWriterSetter( boost::bind( &TAsyncSocketMuxClient::setServerMessageWriter, this, _1, _2, _3, _4 ) );
 	startConnect();
 }
 
-void TAsyncSocketMuxClient::setClientMessageWriter( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock, 
+void TAsyncSocketMuxClient::setClientMessageWriter( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock,
+                        const boost::shared_ptr<BoostAsyncWriter>& asyncWriter, 
 						int channelId,
 						const boost::shared_ptr<AsyncClientChannel>& channel ) {
 	channel->setMessageWriter( boost::bind( &TAsyncSocketMuxClient::write, this, _1, _2, channelId ) );
 
 }
 	
-void TAsyncSocketMuxClient::setServerMessageWriter( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock, 
+void TAsyncSocketMuxClient::setServerMessageWriter( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock,
+                        const boost::shared_ptr<BoostAsyncWriter>& asyncWriter, 
 						int channelId,
 						const boost::shared_ptr<AsyncServerChannel>& channel ) {
 	channel->setMessageWriter( boost::bind( &TAsyncSocketMuxClient::write, this, _1, _2, channelId ) );	
@@ -79,6 +81,8 @@ void TAsyncSocketMuxClient::startConnect() {
     	
     } else {
         sock_->close( err );
+        sock_.reset( new boost::asio::ip::tcp::socket( io_service_ ) );
+        asyncWriter_.reset( new BoostAsyncWriter( sock_ ) );
         boost::asio::ip::tcp::endpoint endpoint = *iter;
         sock_->async_connect( endpoint, boost::bind( &TAsyncSocketMuxClient::handleConnect, this, _1 ) );
     }
@@ -88,7 +92,7 @@ void TAsyncSocketMuxClient::handleConnect( const boost::system::error_code& erro
 	if( error ) {
 		startConnect();
 	} else {
-		listener_->connectionEstablished( sock_, channelCreator_ );
+		listener_->connectionEstablished( sock_, asyncWriter_, channelCreator_ );
 		startRead( new char[4096], 4096 );
 	}
 }
@@ -136,10 +140,7 @@ void TAsyncSocketMuxClient::write( const std::string& msg,
 	TAsyncUtil::writeInt( *s, channelId );
 	TAsyncUtil::writeInt( *s, msg.length() );
 	s->append( msg );
-	boost::asio::async_write( *sock_,
-                        boost::asio::buffer( s->data(), s->length() ),
-                        boost::asio::transfer_all(),
-                        boost::bind( &sendFinished, _1, _2, s, callback ) );
+    asyncWriter_->write( *s, boost::bind( &sendFinished, _1, callback ) );
 	
 }
 
@@ -150,12 +151,10 @@ void TAsyncSocketMuxClient::processPacket( int32_t channelId, std::string msg ) 
 }
 
 
-void TAsyncSocketMuxClient::sendFinished( const boost::system::error_code& error,
-                            std::size_t bytes_transferred,
-                            boost::shared_ptr< std::string > s,
+void TAsyncSocketMuxClient::sendFinished( bool success,
 							boost::function< void( bool ) > callback ) {
 	if( !callback.empty() ) {
-		callback( !error );
+		callback( success );
 	}
 }
 

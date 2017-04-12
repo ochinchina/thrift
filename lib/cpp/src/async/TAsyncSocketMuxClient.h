@@ -46,11 +46,13 @@ public:
 	void setSocketConnectionListener( const boost::shared_ptr<TAsyncSocketConnectionListener>& listener );
 	void start();
 private:
-	void setClientMessageWriter( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock, 
+	void setClientMessageWriter( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock,
+                            const boost::shared_ptr<BoostAsyncWriter>& asyncWriter, 
 							int channelId,
 							const boost::shared_ptr<AsyncClientChannel>& channel );
 		
-	void setServerMessageWriter( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock, 
+	void setServerMessageWriter( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock,
+                            const boost::shared_ptr<BoostAsyncWriter>& asyncWriter, 
 							int channelId,
 							const boost::shared_ptr<AsyncServerChannel>& channel );
 
@@ -75,9 +77,7 @@ private:
 	
 	void processPacket( int32_t channelId, std::string msg );
 	
-	static void sendFinished( const boost::system::error_code& error,
-                                std::size_t bytes_transferred,
-                                boost::shared_ptr< std::string > s,
+	static void sendFinished( bool success,
 								boost::function< void( bool ) > callback );
 	
 private:
@@ -86,6 +86,7 @@ private:
 	std::string recvData_;
 	boost::asio::io_service& io_service_;
 	boost::shared_ptr<boost::asio::ip::tcp::socket> sock_;
+    boost::shared_ptr<BoostAsyncWriter> asyncWriter_;
 	boost::shared_ptr<apache::thrift::concurrency::ThreadManager> threadManager_;
 	boost::shared_ptr<TAsyncSocketConnectionListener> listener_;
 	TDefAsyncSocketChannelCreator channelCreator_;

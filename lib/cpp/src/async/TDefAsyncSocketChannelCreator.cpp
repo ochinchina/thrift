@@ -40,20 +40,22 @@ bool TDefAsyncSocketChannelCreator::SockChannelId::operator<( const SockChannelI
 }
 
 boost::shared_ptr<TGenericAsyncChannel> TDefAsyncSocketChannelCreator::createClientChannel( const boost::shared_ptr< boost::asio::ip::tcp::socket >& sock,
+                                                const boost::shared_ptr<BoostAsyncWriter>& asyncWriter,
 												int channelId,
 												const boost::shared_ptr< apache::thrift::protocol::TProtocolFactory >& protoFactory,
 												int timeoutMillis ) {
 	boost::shared_ptr<TGenericAsyncChannel> channel( new TGenericAsyncChannel( protoFactory, timeoutMillis ) );
-	clientMessageWriterSet( sock, channelId, channel );
+	clientMessageWriterSet( sock, asyncWriter, channelId, channel );
 	channels[ SockChannelId( sock, channelId ) ] = 	TAsyncServerOrClientChannel( channel );
 	return channel;				
 }
 
 
-boost::shared_ptr<TAsyncServerChannel> TDefAsyncSocketChannelCreator::createServerChannel( boost::shared_ptr<boost::asio::ip::tcp::socket> sock, 
+boost::shared_ptr<TAsyncServerChannel> TDefAsyncSocketChannelCreator::createServerChannel( boost::shared_ptr<boost::asio::ip::tcp::socket> sock,
+                                            const boost::shared_ptr<BoostAsyncWriter>& asyncWriter, 
 											int channelId ) {
 	boost::shared_ptr<TAsyncServerChannel> channel( new TAsyncServerChannel() );
-	serverMessageWriterSet( sock, channelId, channel );
+	serverMessageWriterSet( sock, asyncWriter, channelId, channel );
 	channels[ SockChannelId( sock, channelId ) ] = 	TAsyncServerOrClientChannel( channel );
 	return channel;
 }

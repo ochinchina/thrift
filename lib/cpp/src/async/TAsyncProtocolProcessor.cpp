@@ -18,6 +18,7 @@
  */
 
 #include "TAsyncProtocolProcessor.h"
+#include <boost/bind.hpp>
 
 using apache::thrift::transport::TBufferBase;
 using apache::thrift::protocol::TProtocol;
@@ -25,22 +26,22 @@ using apache::thrift::protocol::TProtocol;
 namespace apache { namespace thrift { namespace async {
 
 void TAsyncProtocolProcessor::process(
-    std::tr1::function<void(bool healthy)> _return,
+    boost::function<void(bool healthy)> _return,
     boost::shared_ptr<TBufferBase> ibuf,
     boost::shared_ptr<TBufferBase> obuf) {
   boost::shared_ptr<TProtocol> iprot(pfact_->getProtocol(ibuf));
   boost::shared_ptr<TProtocol> oprot(pfact_->getProtocol(obuf));
   return underlying_->process(
-      std::tr1::bind(
+      boost::bind(
         &TAsyncProtocolProcessor::finish,
         _return,
         oprot,
-        std::tr1::placeholders::_1),
+        _1),
       iprot, oprot);
 }
 
 /* static */ void TAsyncProtocolProcessor::finish(
-    std::tr1::function<void(bool healthy)> _return,
+    boost::function<void(bool healthy)> _return,
     boost::shared_ptr<TProtocol> oprot,
     bool healthy) {
   (void) oprot;

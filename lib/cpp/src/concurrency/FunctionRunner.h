@@ -20,7 +20,7 @@
 #ifndef _THRIFT_CONCURRENCY_FUNCTION_RUNNER_H
 #define _THRIFT_CONCURRENCY_FUNCTION_RUNNER_H 1
 
-#include <tr1/functional>
+#include <boost/function.hpp>
 #include "thrift/lib/cpp/concurrency/Thread.h"
 
 namespace apache { namespace thrift { namespace concurrency {
@@ -43,7 +43,7 @@ namespace apache { namespace thrift { namespace concurrency {
  *  A* a = new A();
  *  // To create a thread that executes a.foo() every 100 milliseconds:
  *  factory->newThread(shared_ptr<FunctionRunner>(
- *    new FunctionRunner(std::tr1::bind(&A::foo, a), 100)))->start();
+ *    new FunctionRunner(boost::bind(&A::foo, a), 100)))->start();
  *
  */
 
@@ -52,16 +52,16 @@ class FunctionRunner : public Runnable {
   // This is the type of callback 'pthread_create()' expects.
   typedef void* (*PthreadFuncPtr)(void *arg);
   // This a fully-generic void(void) callback for custom bindings.
-  typedef std::tr1::function<void()> VoidFunc;
+  typedef boost::function<void()> VoidFunc;
 
-  typedef std::tr1::function<bool()> BoolFunc;
+  typedef boost::function<bool()> BoolFunc;
 
   /**
    * Given a 'pthread_create' style callback, this FunctionRunner will
    * execute the given callback.  Note that the 'void*' return value is ignored.
    */
   FunctionRunner(PthreadFuncPtr func, void* arg)
-   : func_(std::tr1::bind(func, arg)), repFunc_(0)
+   : func_(boost::bind(func, arg)), repFunc_(0)
   { }
 
   /**

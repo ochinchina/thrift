@@ -31,6 +31,7 @@ public:
 	virtual void connectionLost( const boost::shared_ptr<TGenericAsyncChannel>& clientChannel ) = 0;
 	virtual void connectionLost( const boost::shared_ptr<TAsyncServerChannel>& serverChannel ) = 0;
 	virtual void connectionEstablished( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock,
+                    const boost::shared_ptr<BoostAsyncWriter>& asyncWriter,
 					TAsyncSocketChannelCreator& channelCreator ) = 0;
 };
 

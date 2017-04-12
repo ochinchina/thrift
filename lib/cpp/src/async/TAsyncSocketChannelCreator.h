@@ -21,6 +21,7 @@
 
 #include "TGenericAsyncChannel.h"
 #include "TAsyncServerChannel.h"
+#include "BoostAsyncWriter.hpp"
 #include <boost/smart_ptr.hpp>
 #include <boost/asio.hpp>
 
@@ -32,11 +33,13 @@ public:
 	
 	virtual ~TAsyncSocketChannelCreator(){};
 	virtual boost::shared_ptr<AsyncClientChannel> createClientChannel( const boost::shared_ptr< boost::asio::ip::tcp::socket >& sock,
+                                                    const boost::shared_ptr<BoostAsyncWriter>& asyncWriter,
 													int channelId,
 													const boost::shared_ptr< apache::thrift::protocol::TProtocolFactory >& protoFactory,
 													int timeoutMillis ) = 0;
 		
-	virtual boost::shared_ptr<AsyncServerChannel> createServerChannel( boost::shared_ptr<boost::asio::ip::tcp::socket> sock, 
+	virtual boost::shared_ptr<AsyncServerChannel> createServerChannel( boost::shared_ptr<boost::asio::ip::tcp::socket> sock,
+                                                const boost::shared_ptr<BoostAsyncWriter>& asyncWriter, 
 												int channelId ) = 0;
 	
 };

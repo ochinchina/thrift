@@ -30,7 +30,7 @@
 #include <cstddef>
 #include <fstream>
 #include <iostream>
-#include <tr1/functional>
+#include <boost/functional.hpp>
 
 #include <boost/random.hpp>
 #include <boost/shared_array.hpp>
@@ -337,7 +337,7 @@ void test_no_write() {
     ::std::ostringstream name_ss; \
     name_ss << name << "-" << BOOST_STRINGIZE(function); \
     ::boost::unit_test::test_case* tc = ::boost::unit_test::make_test_case( \
-        ::std::tr1::bind(function, ## __VA_ARGS__), \
+        ::boost::bind(function, ## __VA_ARGS__), \
         name_ss.str()); \
     (suite)->add(tc); \
   } while (0)

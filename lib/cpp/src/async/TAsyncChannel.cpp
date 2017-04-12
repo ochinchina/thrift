@@ -18,15 +18,17 @@
  */
 
 #include <async/TAsyncChannel.h>
-#include <tr1/functional>
+#include <boost/function.hpp>
+#include <boost/bind.hpp>
 
 namespace apache { namespace thrift { namespace async {
 
 void TAsyncChannel::sendAndRecvMessage(const VoidCallback& cob,
                                        TMemoryBuffer* sendBuf,
-                                       TMemoryBuffer* recvBuf) {
-  std::tr1::function<void()> send_done =
-    std::tr1::bind(&TAsyncChannel::recvMessage, this, cob, recvBuf);
+                                       TMemoryBuffer* recvBuf,
+				       int timeoutMillis ) {
+  boost::function<void()> send_done =
+    boost::bind(&TAsyncChannel::recvMessage, this, cob, recvBuf);
 
   sendMessage(send_done, sendBuf);
 }
