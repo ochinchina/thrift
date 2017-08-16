@@ -33,7 +33,7 @@ listenPort_( port ),
 acceptor_( io_service_ ),
 protoFactory_( protoFactory ),
 processor_( processor ),
-threadManager_( TAsyncUtil::createThreadManager( processorThreads ) )
+threadPool_( new apache::thrift::concurrency::ThreadPool( processorThreads ) )
 {
 }
 
@@ -71,24 +71,27 @@ void TSocketAsyncServer::startAccept() {
 
 void TSocketAsyncServer::connectionAccepted( const boost::system::error_code& ec, boost::shared_ptr< boost::asio::ip::tcp::socket> sock ) {
 
-	if( !ec ) {		
-		startRead( sock, new char[4096], 4096, new std::string() );
+	if( !ec ) {
+        boost::shared_ptr<BoostAsyncWriter> asyncWriter( new BoostAsyncWriter( sock ) );		
+		startRead( sock, asyncWriter, new char[4096], 4096, new std::string() );
 		startAccept();
 	}
 
 }
 
 void TSocketAsyncServer::startRead( boost::shared_ptr< boost::asio::ip::tcp::socket > sock,
+                        boost::shared_ptr<BoostAsyncWriter> asyncWriter,
 						char* tmp_buf,
 						size_t tmp_buf_len,
 						std::string* msg_buf ) {
 	boost::asio::async_read( *sock,
 				boost::asio::buffer(tmp_buf, tmp_buf_len ),
 				boost::asio::transfer_at_least(1),
-				boost::bind( &TSocketAsyncServer::dataRecevied, this, sock, _1, _2, tmp_buf, tmp_buf_len, msg_buf ) );
+				boost::bind( &TSocketAsyncServer::dataRecevied, this, sock, asyncWriter, _1, _2, tmp_buf, tmp_buf_len, msg_buf ) );
 }
 
-void TSocketAsyncServer::dataRecevied( boost::shared_ptr< boost::asio::ip::tcp::socket > sock,											
+void TSocketAsyncServer::dataRecevied( boost::shared_ptr< boost::asio::ip::tcp::socket > sock,
+                        boost::shared_ptr<BoostAsyncWriter> asyncWriter,											
 						const boost::system::error_code& error,
 						size_t bytes_read,
 						char* tmp_buf,
@@ -101,20 +104,21 @@ void TSocketAsyncServer::dataRecevied( boost::shared_ptr< boost::asio::ip::tcp::
 		msg_buf->append( tmp_buf, bytes_read );
 		boost::shared_ptr<apache::thrift::transport::TMemoryBuffer> frame = extractFrame( *msg_buf );
 		for( ;frame; frame = extractFrame( *msg_buf ) ) {
-			threadManager_->add( TAsyncUtil::createTask( boost::bind( &TSocketAsyncServer::processRequest, this, sock, frame ) ) );
+			threadPool_->submit( boost::bind( &TSocketAsyncServer::processRequest, this, sock, asyncWriter, frame ) );
 		}
-		startRead( sock, tmp_buf, tmp_buf_len, msg_buf );
+		startRead( sock, asyncWriter, tmp_buf, tmp_buf_len, msg_buf );
 	}	
 }
 
 void TSocketAsyncServer::processRequest(  boost::shared_ptr< boost::asio::ip::tcp::socket > sock,
+                boost::shared_ptr<BoostAsyncWriter> asyncWriter,
 				boost::shared_ptr<apache::thrift::transport::TMemoryBuffer> reqBuf ) {
 	boost::shared_ptr<apache::thrift::transport::TMemoryBuffer>outBuf(new apache::thrift::transport::TMemoryBuffer());
 	uint8_t lenBuf[4];
 	outBuf->write( lenBuf, 4 );	
 	boost::shared_ptr<apache::thrift::protocol::TProtocol> iprot(protoFactory_->getProtocol(reqBuf));
 	boost::shared_ptr<apache::thrift::protocol::TProtocol> oprot(protoFactory_->getProtocol(outBuf));
-	processor_->process( std::tr1::bind( &TSocketAsyncServer::processCompleted, this, sock,  std::tr1::placeholders::_1, outBuf ),
+	processor_->process( boost::bind( &TSocketAsyncServer::processCompleted, this, sock,  asyncWriter, _1, outBuf ),
                                         iprot,
                                         oprot);
 
@@ -138,6 +142,7 @@ boost::shared_ptr<apache::thrift::transport::TMemoryBuffer> TSocketAsyncServer::
 }
 
 void TSocketAsyncServer::processCompleted( boost::shared_ptr< boost::asio::ip::tcp::socket> sock,
+                boost::shared_ptr<BoostAsyncWriter> asyncWriter,
 				bool success,
 				boost::shared_ptr<apache::thrift::transport::TMemoryBuffer> outBuf ) {
 	uint8_t* bufPtr =0;
@@ -150,15 +155,18 @@ void TSocketAsyncServer::processCompleted( boost::shared_ptr< boost::asio::ip::t
 	bufPtr[1] = (uint8_t)( ( n >> 16 ) & 0xff );
 	bufPtr[2] = (uint8_t)( ( n >> 8 ) & 0xff );
 	bufPtr[3] = (uint8_t)( ( n ) & 0xff );
-	
-	boost::asio::async_write( *sock, 
+	asyncWriter->write( std::string( (const char*)bufPtr, sz ), boost::bind( &writeFinished, _1 ) );
+	/*boost::asio::async_write( *sock, 
 					boost::asio::buffer( bufPtr, sz ),
-					boost::bind( &writeFinished, boost::asio::placeholders::error, outBuf ) );
+					boost::bind( &writeFinished, boost::asio::placeholders::error, outBuf ) );*/
 
 }
 
-void TSocketAsyncServer::writeFinished( const boost::system::error_code& error,  boost::shared_ptr<apache::thrift::transport::TMemoryBuffer> outBuf ) {
+void TSocketAsyncServer::writeFinished( bool success ) {
 }
+
+//void TSocketAsyncServer::writeFinished( const boost::system::error_code& error,  boost::shared_ptr<apache::thrift::transport::TMemoryBuffer> outBuf ) {
+//}
 
 }}}//end namesapce
 

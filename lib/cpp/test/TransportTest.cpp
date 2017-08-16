@@ -26,7 +26,7 @@
 #include <getopt.h>
 #include <signal.h>
 #include <sstream>
-#include <tr1/functional>
+#include <boost/functional.hpp>
 
 #include <boost/mpl/list.hpp>
 #include <boost/shared_array.hpp>
@@ -892,7 +892,7 @@ class TransportTestGen {
       maxOutstanding << ")";
 
     boost::unit_test::callback0<> test_func =
-      std::tr1::bind(test_rw<CoupledTransports>, totalSize,
+      boost::bind(test_rw<CoupledTransports>, totalSize,
                      wSizeGen, rSizeGen, wChunkSizeGen, rChunkSizeGen,
                      maxOutstanding);
     boost::unit_test::test_case* tc =

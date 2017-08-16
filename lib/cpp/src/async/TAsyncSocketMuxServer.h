@@ -45,18 +45,20 @@ public:
 	void setConnectionListener( boost::shared_ptr<TAsyncSocketConnectionListener> listener );
 	void start();
 private:
-	void setClientMessageWriter( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock, int channelId, const boost::shared_ptr<TGenericAsyncChannel>& clientChannel );
-	void setServerMessageWriter( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock, int channelId, const boost::shared_ptr<TAsyncServerChannel>& channel );
+	void setClientMessageWriter( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock, const boost::shared_ptr<BoostAsyncWriter>& asyncWriter, int channelId, const boost::shared_ptr<TGenericAsyncChannel>& clientChannel );
+	void setServerMessageWriter( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock, const boost::shared_ptr<BoostAsyncWriter>& asyncWriter, int channelId, const boost::shared_ptr<TAsyncServerChannel>& channel );
 	void startAccept() ;
 	
 	void connectionAccepted( const boost::system::error_code& ec, boost::shared_ptr< boost::asio::ip::tcp::socket> sock );
 	
 	void startRead( boost::shared_ptr< boost::asio::ip::tcp::socket > sock,
+                        boost::shared_ptr<BoostAsyncWriter> asyncWriter,
 						char* tmp_buf,
 						size_t tmp_buf_len,
 						std::string* msg_buf );
 	
-	void dataRecevied( boost::shared_ptr< boost::asio::ip::tcp::socket > sock,											
+	void dataRecevied( boost::shared_ptr< boost::asio::ip::tcp::socket > sock,
+                        boost::shared_ptr<BoostAsyncWriter> asyncWriter,											
 						const boost::system::error_code& error,
 						size_t bytes_read,
 						char* tmp_buf,
@@ -64,17 +66,17 @@ private:
 						std::string* msg_buf );
 	
 	void processMessage( boost::shared_ptr< boost::asio::ip::tcp::socket > sock,
+                boost::shared_ptr<BoostAsyncWriter> asyncWriter,
 				int32_t channelId,
 				std::string msg );
 	
-	void write( boost::shared_ptr< boost::asio::ip::tcp::socket> sock, 
+	void write( boost::shared_ptr< boost::asio::ip::tcp::socket> sock,
+            boost::shared_ptr<BoostAsyncWriter> asyncWriter, 
 			const std::string& msg, 
 			const boost::function< void( bool ) >& callback,
 			int channelId );
 	
-	static void sendFinished( const boost::system::error_code& error,
-	                                std::size_t bytes_transferred,
-	                                boost::shared_ptr< std::string > s,
+	static void sendFinished( bool success,
 									boost::function< void( bool ) > callback ) ;
 private:
 	std::string listenAddr_;

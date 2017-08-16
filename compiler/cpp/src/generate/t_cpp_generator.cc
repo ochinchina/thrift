@@ -1492,7 +1492,8 @@ void t_cpp_generator::generate_service(t_service* tservice) {
   if (gen_cob_style_) {
     f_header_ <<
       "#include <transport/TBufferTransports.h>" << endl << // TMemoryBuffer
-      "#include <tr1/functional>" << endl <<
+      "#include <boost/functional.hpp>" << endl <<
+      "#include <boost/bind.hpp>" << endl <<
       "namespace apache { namespace thrift { namespace async {" << endl <<
       "class TAsyncChannel;" << endl <<
       "}}}" << endl;
@@ -2270,10 +2271,10 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
     	t_function* tfunction = *f_iter;
     	t_struct* arglist = tfunction->get_arglist();
     	string cob_type = "(" + service_name_ + "CobClient&)";
-    	async_client_out << "\tvoid " << tfunction->get_name() << "(std::tr1::function<void" + cob_type + "> cob"
+    	async_client_out << "\tvoid " << tfunction->get_name() << "(boost::function<void" + cob_type + "> cob"
     			<< argument_list(arglist, true, true) + ", int timeoutMillis = 0 ){" << endl;
     	async_client_out << "\t\tboost::shared_ptr<" << service_name_ << "CobClient> client( new " << service_name_ << "CobClient(channel_, protocolFactory_.get() ) );" << endl;
-    	async_client_out << "\t\tclient->" << tfunction->get_name() << "( std::tr1::bind(&" << service_name_ << "AsyncClient::processResult, client, std::tr1::placeholders::_1, cob)";
+    	async_client_out << "\t\tclient->" << tfunction->get_name() << "( boost::bind(&" << service_name_ << "AsyncClient::processResult, client, _1, cob)";
     	const vector<t_field*>& fields = arglist->get_members();
     	if( !fields.empty() ) {    		
 			for( int i = 0, n = fields.size(); i < n; i++ ) {
@@ -2291,7 +2292,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
   
   if( ifstyle == "CobCl" ) {
   	async_client_out << "private:" << endl;
-	async_client_out << "\tstatic void processResult( boost::shared_ptr< " << service_name_ << "CobClient > client, " << service_name_ << "CobClient*, std::tr1::function<void(" << service_name_ << "CobClient&)> cob ) {" << endl;
+	async_client_out << "\tstatic void processResult( boost::shared_ptr< " << service_name_ << "CobClient > client, " << service_name_ << "CobClient*, boost::function<void(" << service_name_ << "CobClient&)> cob ) {" << endl;
 	async_client_out << "\t\tcob( *client );" << endl;
 	async_client_out << "\t}" << endl;
 		
@@ -2393,12 +2394,12 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
       if (!(*f_iter)->is_oneway()) {
         out <<
           indent() << _this << "channel_->sendAndRecvMessage(" <<
-          "std::tr1::bind(cob, this), " << _this << "otrans_.get(), " <<
+          "boost::bind(cob, this), " << _this << "otrans_.get(), " <<
           _this << "itrans_.get(), timeoutMillis );" << endl;
       } else {
         out <<
         indent() << _this << "channel_->sendMessage(" <<
-          "std::tr1::bind(cob, this), " << _this << "otrans_.get());" << endl;
+          "boost::bind(cob, this), " << _this << "otrans_.get());" << endl;
       }
     }
     scope_down(out);
@@ -2698,8 +2699,8 @@ ProcessorGenerator::ProcessorGenerator(t_cpp_generator* generator,
     class_name_ = service_name_ + pstyle_ + "Processor";
     if_name_ = service_name_ + "CobSvIf";
 
-    finish_cob_ = "std::tr1::function<void(bool ok)> cob, ";
-    finish_cob_decl_ = "std::tr1::function<void(bool ok)>, ";
+    finish_cob_ = "boost::function<void(bool ok)> cob, ";
+    finish_cob_decl_ = "boost::function<void(bool ok)>, ";
     cob_arg_ = "cob, ";
     ret_type_ = "void ";
   } else {
@@ -2783,25 +2784,25 @@ void ProcessorGenerator::generate_class_definition() {
                         : ", const " + type_name((*f_iter)->get_returntype()) + "& _return");
       f_header_ <<
         indent() << "void return_" << (*f_iter)->get_name() <<
-        "(std::tr1::function<void(bool ok)> cob, int32_t seqid, " <<
+        "(boost::function<void(bool ok)> cob, int32_t seqid, " <<
         "::apache::thrift::protocol::TProtocol* oprot, " <<
         "void* ctx" << ret_arg << ");" << endl;
       if (generator_->gen_templates_) {
         f_header_ <<
           indent() << "void return_" << (*f_iter)->get_name() <<
-          "(std::tr1::function<void(bool ok)> cob, int32_t seqid, " <<
+          "(boost::function<void(bool ok)> cob, int32_t seqid, " <<
           "Protocol_* oprot, void* ctx" << ret_arg << ");" << endl;
       }
       // XXX Don't declare throw if it doesn't exist
       f_header_ <<
         indent() << "void throw_" << (*f_iter)->get_name() <<
-        "(std::tr1::function<void(bool ok)> cob, int32_t seqid, " <<
+        "(boost::function<void(bool ok)> cob, int32_t seqid, " <<
         "apache::thrift::protocol::TProtocol* oprot, void* ctx, " <<
         "apache::thrift::TDelayedException* _throw);" << endl;
       if (generator_->gen_templates_) {
         f_header_ <<
           indent() << "void throw_" << (*f_iter)->get_name() <<
-          "(std::tr1::function<void(bool ok)> cob, int32_t seqid, " <<
+          "(boost::function<void(bool ok)> cob, int32_t seqid, " <<
           "Protocol_* oprot, void* ctx, " <<
           "::apache::thrift::TDelayedException* _throw);" << endl;
       }
@@ -3320,7 +3321,7 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
     out <<
       "void " << tservice->get_name() << "AsyncProcessor" << class_suffix <<
       "::process_" << tfunction->get_name() <<
-      "(std::tr1::function<void(bool ok)> cob, int32_t seqid, " <<
+      "(boost::function<void(bool ok)> cob, int32_t seqid, " <<
       prot_type << "* iprot, " << prot_type << "* oprot)" << endl;
     scope_up(out);
 
@@ -3401,14 +3402,14 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
       // TODO(dreiss): Call the cob immediately?
       out <<
         indent() << "iface_->" << tfunction->get_name() << "(" <<
-        "std::tr1::bind(cob, true)" << endl;
+        "boost::bind(cob, true)" << endl;
       indent_up(); indent_up();
     } else {
       string ret_arg, ret_placeholder;
       if (!tfunction->get_returntype()->is_void()) {
         ret_arg = ", const " + type_name(tfunction->get_returntype()) +
           "& _return";
-        ret_placeholder = ", std::tr1::placeholders::_1";
+        ret_placeholder = ", _1";
       }
 
       // When gen_templates_ is true, the return_ and throw_ functions are
@@ -3416,7 +3417,7 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
       // can resolve the correct overloaded version.
       out <<
         indent() << "void (" << tservice->get_name() << "AsyncProcessor" <<
-        class_suffix << "::*return_fn)(std::tr1::function<void(bool ok)> " <<
+        class_suffix << "::*return_fn)(boost::function<void(bool ok)> " <<
         "cob, int32_t seqid, " << prot_type << "* oprot, void* ctx" <<
         ret_arg << ") =" << endl;
       out <<
@@ -3425,7 +3426,7 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
       if (!xceptions.empty()) {
         out <<
           indent() << "void (" << tservice->get_name() << "AsyncProcessor" <<
-          class_suffix << "::*throw_fn)(std::tr1::function<void(bool ok)> " <<
+          class_suffix << "::*throw_fn)(boost::function<void(bool ok)> " <<
           "cob, int32_t seqid, " << prot_type << "* oprot, void* ctx, " <<
           "::apache::thrift::TDelayedException* _throw) =" << endl;
         out <<
@@ -3437,13 +3438,13 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
         indent() << "iface_->" << tfunction->get_name() << "(" << endl;
       indent_up(); indent_up();
       out <<
-        indent() << "std::tr1::bind(return_fn, this, cob, seqid, oprot, ctx" <<
+        indent() << "boost::bind(return_fn, this, cob, seqid, oprot, ctx" <<
         ret_placeholder << ")";
       if (!xceptions.empty()) {
         out
           << ',' << endl <<
-          indent() << "std::tr1::bind(throw_fn, this, cob, seqid, oprot, " <<
-          "ctx, std::tr1::placeholders::_1)";
+          indent() << "boost::bind(throw_fn, this, cob, seqid, oprot, " <<
+          "ctx, _1)";
       }
     }
 
@@ -3473,7 +3474,7 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
       out <<
         "void " << tservice->get_name() << "AsyncProcessor" << class_suffix <<
         "::return_" << tfunction->get_name() <<
-        "(std::tr1::function<void(bool ok)> cob, int32_t seqid, " <<
+        "(boost::function<void(bool ok)> cob, int32_t seqid, " <<
         prot_type << "* oprot, void* ctx" << ret_arg_decl << ')' << endl;
       scope_up(out);
 
@@ -3542,7 +3543,7 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
       out <<
         "void " << tservice->get_name() << "AsyncProcessor" << class_suffix <<
         "::throw_" << tfunction->get_name() <<
-        "(std::tr1::function<void(bool ok)> cob, int32_t seqid, " <<
+        "(boost::function<void(bool ok)> cob, int32_t seqid, " <<
         prot_type << "* oprot, void* ctx, " <<
         "::apache::thrift::TDelayedException* _throw)" << endl;
       scope_up(out);
@@ -4401,7 +4402,7 @@ string t_cpp_generator::function_signature(t_function* tfunction,
                   ? "()"
                   : ("(" + type_name(ttype) + " const& _return)"));
       if (has_xceptions) {
-        exn_cob = ", std::tr1::function<void(::apache::thrift::TDelayedException* _throw)> /* exn_cob */";
+        exn_cob = ", boost::function<void(::apache::thrift::TDelayedException* _throw)> /* exn_cob */";
       }
     } else {
       throw "UNKNOWN STYLE";
@@ -4409,7 +4410,7 @@ string t_cpp_generator::function_signature(t_function* tfunction,
 
     return
       "void " + prefix + tfunction->get_name() +
-      "(std::tr1::function<void" + cob_type + "> cob" + exn_cob +
+      "(boost::function<void" + cob_type + "> cob" + exn_cob +
       argument_list(arglist, name_params, true) + ", int timeoutMillis " + (header ? "= 0":"") + " )";
   } else {
     throw "UNKNOWN STYLE";

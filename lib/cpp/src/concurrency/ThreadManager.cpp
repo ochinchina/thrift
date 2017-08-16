@@ -306,7 +306,7 @@ class ThreadManager::Worker: public Runnable {
         }
       }
 
-      if (task != NULL) {
+      if (task ) {
         if (task->state_ == ThreadManager::Task::EXECUTING) {
           try {
             task->run();

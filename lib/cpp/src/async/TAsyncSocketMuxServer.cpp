@@ -73,8 +73,8 @@ void TAsyncSocketMuxServer::setConnectionListener( boost::shared_ptr<TAsyncSocke
 }
 void TAsyncSocketMuxServer::start() {
  
- 	channelCreator_.setClientMessageWriterSetter( boost::bind( &TAsyncSocketMuxServer::setClientMessageWriter, this, _1, _2, _3 ) );
- 	channelCreator_.setServerMessageWriterSetter( boost::bind( &TAsyncSocketMuxServer::setServerMessageWriter, this, _1, _2, _3 ) );
+ 	channelCreator_.setClientMessageWriterSetter( boost::bind( &TAsyncSocketMuxServer::setClientMessageWriter, this, _1, _2, _3, _4 ) );
+ 	channelCreator_.setServerMessageWriterSetter( boost::bind( &TAsyncSocketMuxServer::setServerMessageWriter, this, _1, _2, _3, _4 ) );
  	
 	boost::asio::ip::tcp::resolver::query query( listenAddr_, listenPort_ );
 	boost::asio::ip::tcp::resolver resolver(io_service_);
@@ -100,12 +100,12 @@ void TAsyncSocketMuxServer::start() {
 	startAccept();
 }
 
-void TAsyncSocketMuxServer::setClientMessageWriter( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock, int channelId, const boost::shared_ptr<TGenericAsyncChannel>& clientChannel ) {
-	clientChannel->setMessageWriter( boost::bind( &TAsyncSocketMuxServer::write, this, sock, _1, _2, channelId ) );
+void TAsyncSocketMuxServer::setClientMessageWriter( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock, const boost::shared_ptr<BoostAsyncWriter>& asyncWriter, int channelId, const boost::shared_ptr<TGenericAsyncChannel>& clientChannel ) {
+	clientChannel->setMessageWriter( boost::bind( &TAsyncSocketMuxServer::write, this, sock, asyncWriter, _1, _2, channelId ) );
 }
 
-void TAsyncSocketMuxServer::setServerMessageWriter( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock, int channelId, const boost::shared_ptr<TAsyncServerChannel>& channel ) {
-	channel->setMessageWriter( boost::bind( &TAsyncSocketMuxServer::write, this, sock, _1, _2, channelId ) );
+void TAsyncSocketMuxServer::setServerMessageWriter( const boost::shared_ptr<boost::asio::ip::tcp::socket>& sock, const boost::shared_ptr<BoostAsyncWriter>& asyncWriter,int channelId, const boost::shared_ptr<TAsyncServerChannel>& channel ) {
+	channel->setMessageWriter( boost::bind( &TAsyncSocketMuxServer::write, this, sock, asyncWriter, _1, _2, channelId ) );
 }
 
 void TAsyncSocketMuxServer::startAccept() {
@@ -116,9 +116,9 @@ void TAsyncSocketMuxServer::startAccept() {
 void TAsyncSocketMuxServer::connectionAccepted( const boost::system::error_code& ec, boost::shared_ptr< boost::asio::ip::tcp::socket> sock ) {
 
 	if( !ec ) {
-		connListener_->connectionEstablished( sock, channelCreator_ );
-		
-		startRead( sock, new char[4096], 4096, new std::string() );
+		boost::shared_ptr<BoostAsyncWriter> asyncWriter( new BoostAsyncWriter( sock ) );
+		connListener_->connectionEstablished( sock, asyncWriter, channelCreator_ );
+		startRead( sock, asyncWriter, new char[4096], 4096, new std::string() );
 		
 		startAccept();
 	}
@@ -126,16 +126,18 @@ void TAsyncSocketMuxServer::connectionAccepted( const boost::system::error_code&
 }
 
 void TAsyncSocketMuxServer::startRead( boost::shared_ptr< boost::asio::ip::tcp::socket > sock,
+                    boost::shared_ptr<BoostAsyncWriter> asyncWriter,
 					char* tmp_buf,
 					size_t tmp_buf_len,
 					std::string* msg_buf ) {
 	boost::asio::async_read( *sock,
 				boost::asio::buffer(tmp_buf, tmp_buf_len ),
 				boost::asio::transfer_at_least(1),
-				boost::bind( &TAsyncSocketMuxServer::dataRecevied, this, sock, _1, _2, tmp_buf, tmp_buf_len, msg_buf ) );
+				boost::bind( &TAsyncSocketMuxServer::dataRecevied, this, sock, asyncWriter, _1, _2, tmp_buf, tmp_buf_len, msg_buf ) );
 }
 
-void TAsyncSocketMuxServer::dataRecevied( boost::shared_ptr< boost::asio::ip::tcp::socket > sock,											
+void TAsyncSocketMuxServer::dataRecevied( boost::shared_ptr< boost::asio::ip::tcp::socket > sock,
+                    boost::shared_ptr<BoostAsyncWriter> asyncWriter,											
 					const boost::system::error_code& error,
 					size_t bytes_read,
 					char* tmp_buf,
@@ -153,17 +155,18 @@ void TAsyncSocketMuxServer::dataRecevied( boost::shared_ptr< boost::asio::ip::tc
 		
 		while( TAsyncUtil::extractChannelMessage( *msg_buf, channelId, msg ) ) {
 			if( threadManager_ ) {
-				threadManager_->add( TAsyncUtil::createTask( boost::bind( &TAsyncSocketMuxServer::processMessage, this, sock, channelId, msg ) ) );
+				threadManager_->add( TAsyncUtil::createTask( boost::bind( &TAsyncSocketMuxServer::processMessage, this, sock, asyncWriter, channelId, msg ) ) );
 			} else {
-				processMessage( sock, channelId, msg );
+				processMessage( sock, asyncWriter, channelId, msg );
 			}
 		}
 				
-		startRead( sock, tmp_buf, tmp_buf_len, msg_buf );
+		startRead( sock, asyncWriter, tmp_buf, tmp_buf_len, msg_buf );
 	}	
 }
 
 void TAsyncSocketMuxServer::processMessage( boost::shared_ptr< boost::asio::ip::tcp::socket > sock,
+                boost::shared_ptr<BoostAsyncWriter> asyncWriter,
 				int32_t channelId,
 				std::string msg ) {
 	TAsyncServerOrClientChannel channel = channelCreator_.findChannel( sock, channelId );			
@@ -172,7 +175,8 @@ void TAsyncSocketMuxServer::processMessage( boost::shared_ptr< boost::asio::ip::
 
 
 
-void TAsyncSocketMuxServer::write( boost::shared_ptr< boost::asio::ip::tcp::socket> sock, 
+void TAsyncSocketMuxServer::write( boost::shared_ptr< boost::asio::ip::tcp::socket> sock,
+        boost::shared_ptr<BoostAsyncWriter> asyncWriter, 
 		const std::string& msg, 
 		const boost::function< void( bool ) >& callback,
 		int channelId ) {
@@ -181,18 +185,13 @@ void TAsyncSocketMuxServer::write( boost::shared_ptr< boost::asio::ip::tcp::sock
 	TAsyncUtil::writeInt( *s, channelId );
 	TAsyncUtil::writeInt( *s, msg.length() );
 	s->append( msg );
-	boost::asio::async_write( *sock,
-                            boost::asio::buffer( s->data(), s->length() ),
-                            boost::asio::transfer_all(),
-                            boost::bind( &TAsyncSocketMuxServer::sendFinished, _1, _2, s, callback ) );
+    asyncWriter->write( *s, boost::bind( &TAsyncSocketMuxServer::sendFinished, _1, callback ) );
 }
 
-void TAsyncSocketMuxServer::sendFinished( const boost::system::error_code& error,
-                                std::size_t bytes_transferred,
-                                boost::shared_ptr< std::string > s,
+void TAsyncSocketMuxServer::sendFinished( bool success,
 								boost::function< void( bool ) > callback ) {
 	if( !callback.empty() ) {
-		callback( !error );
+		callback( success );
 	}
 }
 

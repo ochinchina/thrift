@@ -18,7 +18,7 @@ io_service_( BackGroundIOService::getInstance().get_io_service() ),
 serverAddr_( serverAddr ),
 serverPort_( port ),
 sock_( new boost::asio::ip::tcp::socket( io_service_ ) ),
-threadManager_( TAsyncUtil::createThreadManager( replyProcThreadNum ) )
+threadPool_( new apache::thrift::concurrency::ThreadPool( replyProcThreadNum ) )
 {
 }
 
@@ -35,7 +35,7 @@ io_service_( io_service ),
 serverAddr_( serverAddr ),
 serverPort_( port ),
 sock_( new boost::asio::ip::tcp::socket( io_service_ ) ),
-threadManager_( TAsyncUtil::createThreadManager( replyProcThreadNum ) )
+threadPool_( new apache::thrift::concurrency::ThreadPool( replyProcThreadNum ) )
 {
 }
 
@@ -48,8 +48,9 @@ stop_( false ),
 connected_( sock_->is_open() ),
 io_service_( sock->get_io_service() ),
 sock_( sock ),
-threadManager_( TAsyncUtil::createThreadManager( replyProcThreadNum ) )
+threadPool_( new apache::thrift::concurrency::ThreadPool( replyProcThreadNum ) )
 {
+    asyncWriter_.reset( new BoostAsyncWriter( sock_ ) );
 }
 
 void TAsyncSocketChannel::start( const boost::function< void() >& connCb ) {
@@ -91,11 +92,7 @@ void TAsyncSocketChannel::sendMessage( const std::string& msg, const boost::func
         s->append( buf, 4 );
         s->append( msg );
 
-        //write the message
-        boost::asio::async_write( *sock_,
-                                        boost::asio::buffer( s->data(), s->length() ),
-                                        boost::asio::transfer_all(),
-                                        boost::bind( &sendFinished, _1, _2, s, callback ) );
+        asyncWriter_->write( *s, boost::bind( &sendFinished, _1, callback ) );
 }
 
 void TAsyncSocketChannel::startRead( boost::shared_array<char> buf, size_t size, const  boost::function<void()>& connCb ) {
@@ -133,6 +130,7 @@ void TAsyncSocketChannel::startConnect( const boost::function< void() >& connCb 
                         startReconnectTimer( connCb );
                 } else {
                         sock_->close( err );
+                        sock_.reset( new boost::asio::ip::tcp::socket( io_service_ ) );
                         //it is good to solve the address, try to connect to it
                         boost::asio::ip::tcp::endpoint endpoint = *iter;
                         sock_->async_connect( endpoint, boost::bind( &TAsyncSocketChannel::handleConnect, this, _1, connCb ) );
@@ -151,6 +149,7 @@ void TAsyncSocketChannel::handleConnect(const boost::system::error_code& error, 
                 sock_->set_option( boost::asio::socket_base::linger( true, 30 ) );
                 sock_->set_option( boost::asio::socket_base::reuse_address( true ) );
 
+                asyncWriter_.reset( new BoostAsyncWriter( sock_ ) );
 		if( !connCb.empty() ) {
 			connCb();
 		}
@@ -177,7 +176,7 @@ void TAsyncSocketChannel::processPackets() {
                 } else {
                         std::string msg = recvPackets_.substr( 4, n );
                         recvPackets_.erase( 0, 4 + n );
-						threadManager_->add( TAsyncUtil::createTask( boost::bind( &TAsyncSocketChannel::processPacket, this, msg ) ) );
+						threadPool_->submit( boost::bind( &TAsyncSocketChannel::processPacket, this, msg ) );
                 }
         }
 }
@@ -187,10 +186,8 @@ void TAsyncSocketChannel::processPacket( std::string msg ) {
 }
 
 
-void TAsyncSocketChannel::sendFinished( const boost::system::error_code& error,
-                                std::size_t bytes_transferred,
-                                boost::shared_ptr< std::string > data,
+void TAsyncSocketChannel::sendFinished( bool success,
                                 boost::function< void( bool ) > callback ) {
-        callback( !error );
+        callback( success );
 }
 }}}//end namespace
