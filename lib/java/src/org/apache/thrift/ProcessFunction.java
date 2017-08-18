@@ -3,6 +3,7 @@
  */
 package org.apache.thrift;
 
+import org.apache.thrift.TProcessor.CompleteCallback;
 import org.apache.thrift.async.AsyncMethodCallback;
 import org.apache.thrift.protocol.TMessage;
 import org.apache.thrift.protocol.TMessageType;
@@ -23,9 +24,9 @@ public abstract class ProcessFunction<I, T extends TBase, R extends TBase> {
 	  }
   
 
-  public final void process(int seqid, TProtocol iprot, TProtocol oprot, I iface) throws TException {
+  public final void process(int seqid, TProtocol iprot, TProtocol oprot, I iface, CompleteCallback completeCb ) throws TException {
     if( async ) {
-    	asyncProcess( seqid, iprot, oprot, iface );
+    	asyncProcess( seqid, iprot, oprot, iface, completeCb );
     } else {
     	syncProcess( seqid, iprot, oprot, iface );
     }
@@ -45,7 +46,7 @@ public abstract class ProcessFunction<I, T extends TBase, R extends TBase> {
 	    sendResult( result, seqid, oprot );
   }
   
-  private void asyncProcess( final int seqid, TProtocol iprot, final TProtocol oprot, I iface ) throws TException {
+  private void asyncProcess( final int seqid, TProtocol iprot, final TProtocol oprot, I iface, final CompleteCallback completeCb ) throws TException {
 	  T args = getEmptyArgsInstance();
 	    try {
 	      args.read(iprot);
@@ -64,11 +65,13 @@ public abstract class ProcessFunction<I, T extends TBase, R extends TBase> {
 					sendResult( result, seqid, oprot );
 				} catch (TException e) {
 				}
+				completeCb.completed();
 			}
 
 			@Override
 			public void onError(Exception e) {
 				sendException( seqid, oprot, e);
+				completeCb.completed();
 			}
 	    	
 	    });

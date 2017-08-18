@@ -22,6 +22,7 @@ package org.apache.thrift.server;
 
 import org.apache.thrift.TByteArrayOutputStream;
 import org.apache.thrift.TException;
+import org.apache.thrift.TProcessor.CompleteCallback;
 import org.apache.thrift.protocol.TProtocol;
 import org.apache.thrift.transport.TFramedTransport;
 import org.apache.thrift.transport.TIOStreamTransport;
@@ -86,7 +87,6 @@ public class TNonblockingServer extends AbstractNonblockingServer {
 			try {
 				transport.start();
 			} catch (IOException e) {
-				e.printStackTrace();
 			}
 		}
 		  
@@ -128,8 +128,6 @@ public class TNonblockingServer extends AbstractNonblockingServer {
     	try {
 			Thread.sleep( 1000 );
 		} catch (InterruptedException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
 		}
     }
   }
@@ -149,24 +147,34 @@ public class TNonblockingServer extends AbstractNonblockingServer {
    * - invoke immediately inline, queue for separate execution, etc.
    */
   @Override
-  protected void requestInvoke(TNonblockingTransport transport, ByteBuffer frameBuffer) {
+  protected void requestInvoke( final TNonblockingTransport transport, ByteBuffer frameBuffer) {
 	  TTransport inTrans = new TMemoryInputTransport( frameBuffer.array());
       TProtocol inProt = inputProtocolFactory_.getProtocol(inTrans);
-      TByteArrayOutputStream response = new TByteArrayOutputStream();
+      final TByteArrayOutputStream response = new TByteArrayOutputStream();
       
 
       try {
     	  TProtocol outProt = outputProtocolFactory_.getProtocol( outputTransportFactory_.getTransport(new TIOStreamTransport(response )) );
-        processorFactory_.getProcessor(inTrans).process(inProt, outProt);
-        transport.asyncWrite( ByteBuffer.wrap( response.toByteArray() ), new TNonblockingTransport.AsyncWriteCallback() {
-			
+        processorFactory_.getProcessor(inTrans).process(inProt, outProt, new CompleteCallback() {
+
 			@Override
-			public void writeFinished(boolean success) {
-				if( !success ) LOGGER.error( "fail to write the message to client");
+			public void completed() {
+				 try {
+					transport.asyncWrite( ByteBuffer.wrap( response.toByteArray() ), new TNonblockingTransport.AsyncWriteCallback() {
+							
+							@Override
+							public void writeFinished(boolean success) {
+								if( !success ) LOGGER.error( "fail to write the message to client");
+							}
+						} );
+				} catch (IOException e) {
+			        LOGGER.error("Unexpected throwable while invoking!", e);
+				} 
+				
 			}
-		} ); 
+        	
+        });       
       } catch (Throwable t) {
-    	  t.printStackTrace();
         LOGGER.error("Unexpected throwable while invoking!", t);
       }
   }

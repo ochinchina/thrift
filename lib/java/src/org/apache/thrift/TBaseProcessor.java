@@ -18,7 +18,7 @@ public abstract class TBaseProcessor<I> implements TProcessor {
   }
 
   @Override
-  public boolean process(TProtocol in, TProtocol out) throws TException {
+  public boolean process(TProtocol in, TProtocol out, CompleteCallback completeCb ) throws TException {
     TMessage msg = in.readMessageBegin();
     ProcessFunction fn = processMap.get(msg.name);
     if (fn == null) {
@@ -31,7 +31,7 @@ public abstract class TBaseProcessor<I> implements TProcessor {
       out.getTransport().flush();
       return true;
     }
-    fn.process(msg.seqid, in, out, iface);
+    fn.process(msg.seqid, in, out, iface, completeCb);
     return true;
   }
 }
