@@ -24,12 +24,14 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.SocketException;
+import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,21 +42,15 @@ import org.slf4j.LoggerFactory;
 public class TNonblockingServerSocket extends TNonblockingServerTransport {
   private static final Logger LOGGER = LoggerFactory.getLogger(TNonblockingServerSocket.class.getName());
 
-  /**
-   * This channel is where all the nonblocking magic happens.
-   */
-  private ServerSocketChannel serverSocketChannel = null;
-
-  /**
-   * Underlying ServerSocket object
-   */
-  private ServerSocket serverSocket_ = null;
 
   /**
    * Timeout for client sockets from accept
    */
   private int clientTimeout_ = 0;
   private TSelector selector = TSelector.getDefaultInstance();
+  private TransportAcceptCallback acceptCallback;
+  private InetSocketAddress bindAddr;
+  private ConcurrentHashMap<SocketChannel, ClientTransport> clients = new ConcurrentHashMap<>();
 
   /**
    * Creates just a port listening server socket
@@ -63,6 +59,10 @@ public class TNonblockingServerSocket extends TNonblockingServerTransport {
     this(port, 0);
   }
 
+    public TNonblockingServerSocket(String bindAddr, int port) throws TTransportException {
+        this(bindAddr, port, 0);
+    }
+
   /**
    * Creates just a port listening server socket
    */
@@ -70,69 +70,32 @@ public class TNonblockingServerSocket extends TNonblockingServerTransport {
     this(new InetSocketAddress(port), clientTimeout);
   }
 
+    public TNonblockingServerSocket(String bindAddr, int port, int clientTimeout) throws TTransportException {
+        this(new InetSocketAddress(bindAddr, port), clientTimeout);
+    }
+
   public TNonblockingServerSocket(InetSocketAddress bindAddr) throws TTransportException {
     this(bindAddr, 0);
   }
 
   public TNonblockingServerSocket(InetSocketAddress bindAddr, int clientTimeout) throws TTransportException {
+    this.bindAddr = bindAddr;
     clientTimeout_ = clientTimeout;
-    try {
-      serverSocketChannel = ServerSocketChannel.open();
-      serverSocketChannel.configureBlocking(false);
 
-      // Make server socket
-      serverSocket_ = serverSocketChannel.socket();
-      // Prevent 2MSL delay problem on server restarts
-      serverSocket_.setReuseAddress(true);
-      // Bind to listening port
-      serverSocket_.bind(bindAddr);
-      
-    } catch (IOException ioe) {
-      serverSocket_ = null;
-      throw new TTransportException("Could not create ServerSocket on address " + bindAddr.toString() + ".");
-    }
   }
 
   public void listen() throws TTransportException {
-    // Make sure not to block on accept
-    if (serverSocket_ != null) {
-      try {
-        serverSocket_.setSoTimeout(0);
-      } catch (SocketException sx) {
-        sx.printStackTrace();
-      }
-    }
+
   }
 
   protected TTransport acceptImpl() throws TTransportException {
-    if (serverSocket_ == null) {
-      throw new TTransportException(TTransportException.NOT_OPEN, "No underlying server socket.");
-    }
-    try {
-      SocketChannel socketChannel = serverSocketChannel.accept();
-      if (socketChannel == null) {
-        return null;
-      }
-
-      TNonblockingSocket tsocket = new TNonblockingSocket(socketChannel );
-      tsocket.setTimeout(clientTimeout_);
-      return tsocket;
-    } catch (IOException iox) {
-      throw new TTransportException(iox);
-    }
+    return null;
   }
 
  
 
   public void close() {
-    if (serverSocket_ != null) {
-      try {
-        serverSocket_.close();
-      } catch (IOException iox) {
-        LOGGER.warn("WARNING: Could not close server socket: " + iox.getMessage());
-      }
-      serverSocket_ = null;
-    }
+
   }
 
   public void interrupt() {
@@ -141,27 +104,99 @@ public class TNonblockingServerSocket extends TNonblockingServerTransport {
     close();
   }
 
-@Override
-public void accept( final TransportAcceptCallback acceptCallback) {
-	selector.register(serverSocketChannel, SelectionKey.OP_ACCEPT, new TSelector.ChannelOperator() {
-		
-		@Override
-		public void doOperation() {
-			try {				
-				SocketChannel socketChannel = serverSocketChannel.accept();
-				if( socketChannel != null ) {
-					TNonblockingSocket tsocket = new TNonblockingSocket(socketChannel );
-				    tsocket.setTimeout(clientTimeout_);
-				    try {
-				    	acceptCallback.accepted(tsocket);
-				    }catch( Exception ex ) {				    	
-				    }
-				}
-			}catch( Exception ex ) {
-				selector.cancel( serverSocketChannel, SelectionKey.OP_ACCEPT, this);
-			}
-		}
-	}, -1 );
-}
+  @Override
+  public void accept( final TransportAcceptCallback acceptCallback) {
+      this.acceptCallback = acceptCallback;
+    TSelector.ChannelHandler channelHandler = new TSelector.ChannelHandler() {
+
+      @Override
+      public void handleConnect(SocketChannel channel) {
+        if( channel.isConnected()) {
+            ClientTransport client = new ClientTransport( channel );
+            clients.put( channel, client );
+            acceptCallback.accepted( client);
+        }
+      }
+
+      @Override
+      public void handleRead(SocketChannel channel) throws IOException {
+          ClientTransport clientTransport = clients.get(channel);
+          if( clientTransport != null ) {
+              clientTransport.doRead();
+          }
+
+      }
+
+      @Override
+      public void handleException(SocketChannel channel) {
+          clients.remove( channel );
+      }
+    };
+    selector.listen( bindAddr.getHostName(), bindAddr.getPort(), channelHandler );
+
+  }
+
+
+
+    private class ClientTransport extends TNonblockingTransport {
+
+        private SocketChannel channel;
+        private StoreForwardMessageListener listener = new StoreForwardMessageListener( this );
+        private TFrameReader frameReader;
+
+        public ClientTransport( SocketChannel channel ) {
+            this.channel = channel;
+            this.frameReader = new TFrameReader( channel);
+        }
+        @Override
+        public void setMessageListener(TNonblockingMessageListener listener) {
+            this.listener.setListener( listener);
+        }
+
+        @Override
+        public void start() throws IOException {
+
+        }
+
+        @Override
+        public void asyncWrite(ByteBuffer buffer, AsyncWriteCallback cb) throws IOException {
+            selector.write( channel, buffer, cb );
+        }
+
+        @Override
+        public boolean isOpen() {
+            return this.channel.isConnected();
+        }
+
+        @Override
+        public void open() throws TTransportException {
+
+        }
+
+        @Override
+        public void close() {
+
+        }
+
+        @Override
+        public int read(byte[] buf, int off, int len) throws TTransportException {
+            return 0;
+        }
+
+        @Override
+        public void write(byte[] buf, int off, int len) throws TTransportException {
+
+        }
+
+        public void doRead() throws IOException{
+                ByteBuffer frame = frameReader.readFrom();
+                if( frame != null ) {
+                    this.listener.msgReceived( this, frame );
+                }
+        }
+
+
+    }
+
 
 }

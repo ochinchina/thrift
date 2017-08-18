@@ -21,6 +21,7 @@ package org.apache.thrift.server;
 
 import org.apache.thrift.TException;
 import org.apache.thrift.TProcessor;
+import org.apache.thrift.TProcessor.CompleteCallback;
 import org.apache.thrift.protocol.TProtocol;
 import org.apache.thrift.transport.TTransport;
 import org.apache.thrift.transport.TTransportException;
@@ -67,7 +68,7 @@ public class TSimpleServer extends TServer {
           outputTransport = outputTransportFactory_.getTransport(client);
           inputProtocol = inputProtocolFactory_.getProtocol(inputTransport);
           outputProtocol = outputProtocolFactory_.getProtocol(outputTransport);
-          while (processor.process(inputProtocol, outputProtocol)) {}
+          while (processor.process(inputProtocol, outputProtocol, null )) {}
         }
       } catch (TTransportException ttx) {
         // Client died, just move on

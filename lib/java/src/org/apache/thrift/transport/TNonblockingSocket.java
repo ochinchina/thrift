@@ -28,6 +28,7 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,15 +40,18 @@ public class TNonblockingSocket extends TNonblockingTransport {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(TNonblockingSocket.class.getName());
 
-  private AsyncChannel asyncChannel_;
-  
-  private ByteBuffer frameSizeBuffer = ByteBuffer.allocate(4);
-  private ByteBuffer frameBuffer = null;
+
+  private TFrameReader frameReader;
   private static final Timer connectTimer = new Timer();
+  private TSelector selector = TSelector.getDefaultInstance();
+  private String host;
+  private int port;
+    private TNonblockingMessageListener listener;
+    private SocketChannel channel;
+    private AtomicInteger connectTriedTimes = new AtomicInteger(0);
 
-  
 
-  public TNonblockingSocket(String host, int port ) throws IOException {
+    public TNonblockingSocket(String host, int port ) throws IOException {
     this(host, port, 0);
   }
 
@@ -59,37 +63,72 @@ public class TNonblockingSocket extends TNonblockingTransport {
    * @throws IOException
    */
   public TNonblockingSocket(String host, int port, int timeout ) throws IOException {
-    this(SocketChannel.open(), timeout, new InetSocketAddress(host, port) );
+    this.host = host;
+    this.port = port;
   }
 
-  /**
-   * Constructor that takes an already created socket.
-   *
-   * @param socketChannel Already created SocketChannel object
-   * @throws IOException if there is an error setting up the streams
-   */
-  public TNonblockingSocket(SocketChannel socketChannel) throws IOException {
-    this(socketChannel, 0, null );
-    if (!socketChannel.isConnected()) throw new IOException("Socket must already be connected");
-  }
 
-  private TNonblockingSocket(SocketChannel socketChannel, int timeout, SocketAddress socketAddress )
-      throws IOException {
-	if( socketChannel != null && socketChannel.isConnected() ) {
-		this.asyncChannel_ = new AsyncChannel( TSelector.getDefaultInstance(), socketChannel, timeout );
-	} else {
-		this.asyncChannel_ = new AsyncChannel( TSelector.getDefaultInstance(), socketAddress, timeout );
-	}    
-  }
 
  
  @Override
  public void start() {
-	 this.asyncChannel_.start();
+     try {
+         selector.connect( host, port, createChannelHandler() );
+         while( connectTriedTimes.get() <= 0 ) {
+             try { Thread.sleep(10); }catch (Exception ex ) {}
+         }
+     }catch (Exception ex ) {
+         LOGGER.error( "Fail to make connect to " + host + ":" + port );
+     }
+
  }
- 
+
+ private TSelector.ChannelHandler createChannelHandler() {
+     return new TSelector.ChannelHandler() {
+         @Override
+         public void handleConnect(SocketChannel channel) {
+             TNonblockingSocket.this.channel = channel;
+             connectTriedTimes.incrementAndGet();
+             if( channel.isConnected()) {
+                 LOGGER.info( "Connect to " + channel + " Successfully");
+                 frameReader = new TFrameReader(channel);
+             } else {
+                 LOGGER.error( "Fail to connect " + host + ":" + port );
+                 connectLater( 5000 );
+             }
+         }
+
+         @Override
+         public void handleRead(SocketChannel channel) throws IOException{
+                 ByteBuffer frame = readFrame();
+                 if( frame != null ) {
+                     listener.msgReceived( TNonblockingSocket.this, frame);
+                 }
+         }
+
+         @Override
+         public void handleException(SocketChannel channel) {
+             LOGGER.info( "Connection to " + channel + " is lost");
+
+             listener.exception(TNonblockingSocket.this, new RuntimeException("Fail to read data from " + channel) );
+             connectLater( 5000 );
+         }
+     };
+ }
+ private void connectLater( int millis ) {
+     connectTimer.schedule(new TimerTask() {
+         @Override
+         public void run() {
+             try {
+                 selector.connect( host, port, createChannelHandler() );
+             }catch (Exception ex ) {
+             }
+         }
+     }, millis);
+ }
  public void setMessageListener( TNonblockingMessageListener listener ) {
-	 this.asyncChannel_.setMessageListener( listener );
+	 this.listener = listener;
+
  }
   /**
    * Sets the socket timeout, although this implementation never uses blocking operations so it is unused.
@@ -97,14 +136,14 @@ public class TNonblockingSocket extends TNonblockingTransport {
    * @param timeout Milliseconds timeout
    */
   public void setTimeout(int timeout) {
-	  asyncChannel_.setTimeout( timeout );
+
   }
 
   /**
    * Returns a reference to the underlying SocketChannel.
    */
   public SocketChannel getSocketChannel() {
-    return asyncChannel_.getSocketChannel();
+    return channel;
   }
 
   /**
@@ -112,7 +151,7 @@ public class TNonblockingSocket extends TNonblockingTransport {
    */
   public boolean isOpen() {
     // isConnected() does not return false after close(), but isOpen() does
-	  return asyncChannel_.isConnected();
+	  return channel != null && channel.isConnected();
   }
 
   /**
@@ -162,7 +201,12 @@ public class TNonblockingSocket extends TNonblockingTransport {
    * Closes the socket.
    */
   public void close() {
-	  asyncChannel_.close();
+	  if( isOpen()) {
+          try {
+              this.channel.close();
+          } catch (IOException e) {
+          }
+      }
   }
 
 
@@ -170,27 +214,8 @@ public class TNonblockingSocket extends TNonblockingTransport {
 	
 		
 
-	protected ByteBuffer readFrame( SocketChannel sockChannel ) throws IOException  {
-				if( frameSizeBuffer.remaining() != 0 ) {
-					if( sockChannel.read( frameSizeBuffer ) == -1 ) throw new IOException( "End of stream");
-					if( frameSizeBuffer.remaining() == 0 ) {
-						int n = TFramedTransport.decodeFrameSize(frameSizeBuffer.array());
-						frameBuffer = ByteBuffer.allocate( n );
-						if( sockChannel.read( frameBuffer ) == -1 ) throw new IOException( "End of stream");
-					}
-				} else {
-					if( sockChannel.read( frameBuffer ) == -1 ) throw new IOException( "End of stream");
-				}
-				
-				if( frameSizeBuffer.remaining() == 0 && frameBuffer.remaining() == 0 ) {
-					//frameSizeBuffer = ByteBuffer.allocate( 4 );
-					frameSizeBuffer.limit( frameSizeBuffer.capacity() );
-					frameSizeBuffer.position( 0 );
-					return frameBuffer;
-				}
-				return null;
-		
-		
+	protected ByteBuffer readFrame( ) throws IOException  {
+      return frameReader.readFrom();
 	}
 	
 	
@@ -198,224 +223,9 @@ public class TNonblockingSocket extends TNonblockingTransport {
 	
 	@Override
 	public void asyncWrite( final ByteBuffer buffer, final AsyncWriteCallback listener ) throws IOException {
-		asyncChannel_.asyncWrite(buffer, listener);		
+		selector.write( channel, buffer, listener);
 	}
 	
-	private class ProxyMessageListener implements TNonblockingMessageListener {
-		
-		private TNonblockingMessageListener listener_ = null;
-		private volatile boolean exceptionRaised = false;
-		
-		ProxyMessageListener(TNonblockingMessageListener listener ) {
-			listener_ = listener;
-		}
-		
-		
-		@Override
-		public void msgReceived(TNonblockingTransport transport, ByteBuffer msgBuf) {
-			exceptionRaised = false;
-			listener_.msgReceived(transport, msgBuf);
-		}
 
-		@Override
-		public void exception(TNonblockingTransport transport, Exception ex) {
-			if( !exceptionRaised) {
-				exceptionRaised = true;
-				listener_.exception(transport, ex);
-			}
-		}
-		
-	}
-	
-	
-	private class AsyncChannel {
-		private TSelector selector_;
-		private volatile boolean stop_ = false;
-		private volatile SocketChannel socketChannel_;
-		private SocketAddress socketAddress_;
-		private int timeout_;
-		private TNonblockingMessageListener listener = null;
-		
-		AsyncChannel( TSelector selector, SocketChannel socketChannel, int timeout ) {
-			this.selector_ = selector;
-			this.socketChannel_ = socketChannel;
-			this.timeout_ = timeout;
-			setSocketOptions();
-			
-			
-		}
-		
-		public void setMessageListener(TNonblockingMessageListener listener) {
-			this.listener = new ProxyMessageListener( listener );
-			
-		}
-
-		public void start() {
-			if( isConnected() ) {
-				doRead();
-			}else {
-				connectLater( 10 );
-			}
-		}
-
-		void close() {
-			try {
-				stop_ = true;
-				socketChannel_.close();
-			}catch( Exception ex ) {				
-			}
-			
-		}
-
-		SocketChannel getSocketChannel() {
-			return socketChannel_;
-		}
-
-		void setTimeout(int timeout) {
-			this.timeout_ = timeout;
-			try {
-				socketChannel_.socket().setSoTimeout(timeout);
-			}catch( Exception ex ) {
-				
-			}
-		}
-
-		AsyncChannel( TSelector selector, SocketAddress socketAddress, int timeout ) throws IOException {
-			this.selector_ = selector;
-			this.socketAddress_ = socketAddress;
-			this.timeout_ = timeout;
-			this.listener = new ProxyMessageListener( listener );
-			
-		}
-		
-		private void setSocketOptions() {
-			try {
-				socketChannel_.configureBlocking( false );
-				socketChannel_.socket().setSoLinger(false, 0);
-				socketChannel_.socket().setTcpNoDelay(true);
-				socketChannel_.socket().setSoTimeout(timeout_);
-			} catch (IOException e) {
-			}
-			
-		}
-		
-		
-		void doRead() {
-			
-			if( stop_ ) {
-				listener.exception( TNonblockingSocket.this, new Exception("already stoped") );
-				return;
-			}
-			
-			selector_.register( socketChannel_, SelectionKey.OP_READ, new TSelector.ChannelOperator() {
-			
-					
-					@Override
-					public void doOperation()  {
-						try {
-							ByteBuffer frameBuf = readFrame(socketChannel_);
-							if( frameBuf != null ) {
-								listener.msgReceived( TNonblockingSocket.this, frameBuf );
-							}							
-							doRead();
-						}catch( Exception ex ) {
-							listener.exception( TNonblockingSocket.this, new Exception("connection lost") );
-							connectLater( 100 );
-						}
-					}
-					
-			}, 1 );
-		}
-		
-		void asyncWrite( final ByteBuffer buffer, final AsyncWriteCallback writeCb )  {
-			if( stop_ || !isConnected() ) {
-				writeCb.writeFinished(false);
-				return;
-			}
-			
-			selector_.register( socketChannel_, SelectionKey.OP_WRITE, new TSelector.ChannelOperator() {			
-				@Override
-				public void doOperation() {
-					try {
-						socketChannel_.write( buffer );
-						writeCb.writeFinished(true);
-					} catch (IOException e) {
-						LOGGER.error( "fail to write to the server", e);
-						writeCb.writeFinished(false);
-					}				
-				}
-				
-			}, 1 );
-		}
-		
-		private void connectLater( int delayMillis ) {
-			if( stop_ ) {
-				return;
-			}
-			
-			if( delayMillis <= 0 ) {
-				doConnect();
-			} else {
-				connectTimer.schedule( new TimerTask(){
-	
-					@Override
-					public void run() {
-						doConnect();				
-					}
-					
-				}, delayMillis);
-			}
-		}
-		
-		
-		private void doConnect() {
-			
-			
-			if( socketAddress_ == null ) {
-				return;
-			}
-			
-			try {
-				socketChannel_.close();
-			}catch( Exception ex ) {
-				
-			}
-			try {
-				socketChannel_ = SocketChannel.open();
-				setSocketOptions();
-				selector_.register( socketChannel_, SelectionKey.OP_CONNECT, new TSelector.ChannelOperator() {
-					
-					@Override
-					public void doOperation() {
-						try {
-							socketChannel_.finishConnect();
-						}catch( Exception ex ) {
-							ex.printStackTrace();
-						}
-						if( isConnected() ) {
-							doRead();
-						} else {
-							connectLater(100);
-						}
-					}
-				}, 1 );
-				
-				try {
-					if( socketChannel_.connect( socketAddress_ )  ) {
-						doRead();
-					} 
-				} catch (IOException e) {
-					connectLater( 100 );
-				}		
-				
-			} catch (IOException e1) {
-				connectLater( 100 );
-			}
-		}
-		
-		private boolean isConnected() {
-			return socketChannel_ != null && socketChannel_.isOpen() && socketChannel_.isConnected();
-		}
-	}
 
 }

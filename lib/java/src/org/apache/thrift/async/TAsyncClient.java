@@ -23,9 +23,7 @@ import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Timer;
 import java.util.TimerTask;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 import org.apache.thrift.TApplicationException;
 import org.apache.thrift.TException;
@@ -45,7 +43,7 @@ public abstract class TAsyncClient {
   private long ___timeout;
   private ConcurrentHashMap< Integer, TAsyncMethodCall > methodCalls = new ConcurrentHashMap<Integer, TAsyncMethodCall>(); 
   private volatile ExecutorService responseProcThreadPool = null;
-  private static Timer methodTimeoutTimer = new Timer();
+  private static ScheduledExecutorService methodTimeoutTimer = Executors.newScheduledThreadPool(2);
   private MethodTimeoutManager methodTimeoutMgr = new MethodTimeoutManager();
 
   public TAsyncClient(TProtocolFactory protocolFactory, TNonblockingTransport transport) {
@@ -91,7 +89,6 @@ public abstract class TAsyncClient {
 						method.processResponse( msgBuf );
 					} 
 				}catch( Exception ex ) {
-					ex.printStackTrace();
 				}
 				
 			}
@@ -195,13 +192,11 @@ public TProtocolFactory getProtocolFactory() {
 		
 	}
   
-  private TimerTask createMethodTimerTask( final TAsyncMethodCall method ) {
-	  return new TimerTask() {
-			@Override public void run() {
-				methodTimeoutMgr.removeTimeoutTimer( method );
-				processException( method, new TApplicationException("method is timeout") );
-			}
-		};
+  private Runnable createMethodTimerTask( final TAsyncMethodCall method ) {
+  	return () -> {
+		methodTimeoutMgr.removeTimeoutTimer( method );
+		processException( method, new TApplicationException("method is timeout") );
+	};
   }
   
   private void stopTimeoutTimer( final TAsyncMethodCall method ) {
@@ -232,19 +227,19 @@ public TProtocolFactory getProtocolFactory() {
 	}
 	
 	private class MethodTimeoutManager {
-		private ConcurrentHashMap< TAsyncMethodCall, TimerTask > methodTimerTasks = new ConcurrentHashMap<TAsyncMethodCall, TimerTask>();
+		private ConcurrentHashMap< TAsyncMethodCall, ScheduledFuture<?> > methodTimerTasks = new ConcurrentHashMap<>();
 		
 		void startTimeoutTimer( final TAsyncMethodCall method ) {
-			TimerTask timerTask = createMethodTimerTask(method);
+			Runnable timerTask = createMethodTimerTask(method);
 			
-			methodTimerTasks.put(method, timerTask);
-			methodTimeoutTimer.schedule(timerTask, ___timeout );
-			
+			ScheduledFuture<?> f = methodTimeoutTimer.schedule(timerTask, ___timeout, TimeUnit.MILLISECONDS);
+			methodTimerTasks.put( method, f );
+
 		}
 		
 		void stopTimeoutTimer( final TAsyncMethodCall method ) {
-			TimerTask timerTask = methodTimerTasks.remove( method );
-			if( timerTask != null ) timerTask.cancel();
+			ScheduledFuture<?> timerTask = methodTimerTasks.remove( method );
+			if( timerTask != null ) timerTask.cancel(false);
 		}
 		
 		void removeTimeoutTimer(  TAsyncMethodCall method ) {

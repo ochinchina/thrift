@@ -14,6 +14,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.apache.thrift.TException;
 import org.apache.thrift.TProcessor;
+import org.apache.thrift.TProcessor.CompleteCallback;
 import org.apache.thrift.protocol.TProtocol;
 import org.apache.thrift.protocol.TProtocolFactory;
 import org.apache.thrift.transport.TIOStreamTransport;
@@ -80,7 +81,7 @@ public class TServlet extends HttpServlet {
       TProtocol inProtocol = inProtocolFactory.getProtocol(inTransport);
       TProtocol outProtocol = outProtocolFactory.getProtocol(outTransport);
 
-      processor.process(inProtocol, outProtocol);
+      processor.process(inProtocol, outProtocol, null);
       out.flush();
     } catch (TException te) {
       throw new ServletException(te);
