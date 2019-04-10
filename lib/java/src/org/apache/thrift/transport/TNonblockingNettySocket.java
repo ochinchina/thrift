@@ -45,6 +45,7 @@ public class TNonblockingNettySocket extends TNonblockingTransport {
 	private void initNetwork() {
 		bootstrap.group(eventLoopGroup)
 		.channel(NioSocketChannel.class)
+		.option(ChannelOption.TCP_NODELAY, true)
 		.option(ChannelOption.SO_KEEPALIVE, true)
 		.handler(new ChannelInitializer<SocketChannel>() {
 

@@ -61,6 +61,7 @@ public class TNonblockingNettyServerSocket extends TNonblockingServerTransport {
 						ch.pipeline().addLast( new TNettyMessageDecoder(), new MessageHandler() );
 					}
 				}).option(ChannelOption.SO_BACKLOG, 128)
+				.childOption( ChannelOption.TCP_NODELAY, true )
 				.childOption( ChannelOption.SO_KEEPALIVE, true );
 	}
 
