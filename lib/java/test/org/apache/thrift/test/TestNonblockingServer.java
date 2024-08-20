@@ -19,10 +19,8 @@
 
 package org.apache.thrift.test;
 
-import org.apache.thrift.server.THsHaServer;
 import org.apache.thrift.server.TNonblockingServer;
 import org.apache.thrift.server.TServer;
-import org.apache.thrift.server.THsHaServer.Args;
 import org.apache.thrift.transport.TNonblockingServerSocket;
 import org.apache.thrift.server.ServerTestBase.TestHandler;
 

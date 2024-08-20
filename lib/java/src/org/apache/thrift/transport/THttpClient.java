@@ -25,18 +25,13 @@ import java.io.InputStream;
 import java.io.IOException;
 
 import java.net.URL;
-import java.net.HttpURLConnection;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.http.HttpHost;
-import org.apache.http.HttpResponse;
-import org.apache.http.HttpStatus;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.ByteArrayEntity;
-import org.apache.http.params.CoreConnectionPNames;
-import org.apache.http.util.EntityUtils;
+import org.apache.hc.client5.http.fluent.Request;
+
+import org.apache.hc.client5.http.fluent.Response;
+import org.apache.hc.core5.util.Timeout;
 
 /**
  * HTTP implementation of the TTransport interface. Used for working with a
@@ -79,33 +74,20 @@ public class THttpClient extends TTransport {
 
   private Map<String,String> customHeaders_ = null;
 
-  private final HttpHost host;
-  
-  private final HttpClient client;
-  
+
   public static class Factory extends TTransportFactory {
     
     private final String url;
-    private final HttpClient client;
-    
+
     public Factory(String url) {
       this.url = url;
-      this.client = null;
     }
 
-    public Factory(String url, HttpClient client) {
-      this.url = url;
-      this.client = client;
-    }
-    
+
     @Override
     public TTransport getTransport(TTransport trans) {
       try {
-        if (null != client) {
-          return new THttpClient(url, client);
-        } else {
           return new THttpClient(url);
-        }
       } catch (TTransportException tte) {
         return null;
       }
@@ -115,39 +97,18 @@ public class THttpClient extends TTransport {
   public THttpClient(String url) throws TTransportException {
     try {
       url_ = new URL(url);
-      this.client = null;
-      this.host = null;
     } catch (IOException iox) {
       throw new TTransportException(iox);
     }
   }
 
-  public THttpClient(String url, HttpClient client) throws TTransportException {
-    try {
-      url_ = new URL(url);
-      this.client = client;
-      this.host = new HttpHost(url_.getHost(), -1 == url_.getPort() ? url_.getDefaultPort() : url_.getPort(), url_.getProtocol());
-    } catch (IOException iox) {
-      throw new TTransportException(iox);
-    }
-  }
 
   public void setConnectTimeout(int timeout) {
     connectTimeout_ = timeout;
-    if (null != this.client) {
-      // WARNING, this modifies the HttpClient params, this might have an impact elsewhere if the
-      // same HttpClient is used for something else.
-      client.getParams().setParameter(CoreConnectionPNames.CONNECTION_TIMEOUT, connectTimeout_);
-    }
   }
 
   public void setReadTimeout(int timeout) {
     readTimeout_ = timeout;
-    if (null != this.client) {
-      // WARNING, this modifies the HttpClient params, this might have an impact elsewhere if the
-      // same HttpClient is used for something else.
-      client.getParams().setParameter(CoreConnectionPNames.SO_TIMEOUT, readTimeout_);
-    }
   }
 
   public void setCustomHeaders(Map<String,String> headers) {
@@ -199,50 +160,48 @@ public class THttpClient extends TTransport {
 
   private void flushUsingHttpClient() throws TTransportException {
     
-    if (null == this.client) {
-      throw new TTransportException("Null HttpClient, aborting.");
-    }
 
     // Extract request and reset buffer
     byte[] data = requestBuffer_.toByteArray();
     requestBuffer_.reset();
 
-    HttpPost post = null;
-    
+
     InputStream is = null;
     
-    try {      
+    try {
       // Set request to path + query string
-      post = new HttpPost(this.url_.getFile());
-      
+      Request post = Request.post(this.url_.getFile());
+
       //
       // Headers are added to the HttpPost instance, not
       // to HttpClient.
       //
-      
+
       post.setHeader("Content-Type", "application/x-thrift");
       post.setHeader("Accept", "application/x-thrift");
       post.setHeader("User-Agent", "Java/THttpClient/HC");
-      
+      post.connectTimeout(Timeout.ofSeconds(this.connectTimeout_));
+      post.responseTimeout(Timeout.ofSeconds(this.readTimeout_));
+
       if (null != customHeaders_) {
         for (Map.Entry<String, String> header : customHeaders_.entrySet()) {
           post.setHeader(header.getKey(), header.getValue());
         }
       }
 
-      post.setEntity(new ByteArrayEntity(data));
-      
-      HttpResponse response = this.client.execute(this.host, post);
-      int responseCode = response.getStatusLine().getStatusCode();
+      post.bodyByteArray(data);
 
-      //      
+      Response response = post.execute();
+      int responseCode = response.returnResponse().getCode();
+
+      //
       // Retrieve the inputstream BEFORE checking the status code so
       // resources get freed in the finally clause.
       //
 
-      is = response.getEntity().getContent();
-      
-      if (responseCode != HttpStatus.SC_OK) {
+      is = response.returnContent().asStream();
+
+      if (responseCode != 200 ) {
         throw new TTransportException("HTTP Response code: " + responseCode);
       }
 
@@ -252,10 +211,10 @@ public class THttpClient extends TTransport {
       // thrift struct is being read up the chain).
       // Proceeding differently might lead to exhaustion of connections and thus
       // to app failure.
-      
+
       byte[] buf = new byte[1024];
       ByteArrayOutputStream baos = new ByteArrayOutputStream();
-      
+
       int len = 0;
       do {
         len = is.read(buf);
@@ -263,21 +222,11 @@ public class THttpClient extends TTransport {
           baos.write(buf, 0, len);
         }
       } while (-1 != len);
-      
-      try {
-        // Indicate we're done with the content.
-        EntityUtils.consume(response.getEntity());
-      } catch (IOException ioe) {
-        // We ignore this exception, it might only mean the server has no
-        // keep-alive capability.
-      }
-            
+
       inputStream_ = new ByteArrayInputStream(baos.toByteArray());
+
     } catch (IOException ioe) {
       // Abort method so the connection gets released back to the connection manager
-      if (null != post) {
-        post.abort();
-      }
       throw new TTransportException(ioe);
     } finally {
       if (null != is) {
@@ -292,52 +241,6 @@ public class THttpClient extends TTransport {
   }
 
   public void flush() throws TTransportException {
-
-    if (null != this.client) {
       flushUsingHttpClient();
-      return;
-    }
-
-    // Extract request and reset buffer
-    byte[] data = requestBuffer_.toByteArray();
-    requestBuffer_.reset();
-
-    try {
-      // Create connection object
-      HttpURLConnection connection = (HttpURLConnection)url_.openConnection();
-
-      // Timeouts, only if explicitly set
-      if (connectTimeout_ > 0) {
-        connection.setConnectTimeout(connectTimeout_);
-      }
-      if (readTimeout_ > 0) {
-        connection.setReadTimeout(readTimeout_);
-      }
-
-      // Make the request
-      connection.setRequestMethod("POST");
-      connection.setRequestProperty("Content-Type", "application/x-thrift");
-      connection.setRequestProperty("Accept", "application/x-thrift");
-      connection.setRequestProperty("User-Agent", "Java/THttpClient");
-      if (customHeaders_ != null) {
-        for (Map.Entry<String, String> header : customHeaders_.entrySet()) {
-          connection.setRequestProperty(header.getKey(), header.getValue());
-        }
-      }
-      connection.setDoOutput(true);
-      connection.connect();
-      connection.getOutputStream().write(data);
-
-      int responseCode = connection.getResponseCode();
-      if (responseCode != HttpURLConnection.HTTP_OK) {
-        throw new TTransportException("HTTP Response code: " + responseCode);
-      }
-
-      // Read the responses
-      inputStream_ = connection.getInputStream();
-
-    } catch (IOException iox) {
-      throw new TTransportException(iox);
-    }
   }
 }

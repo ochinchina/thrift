@@ -20,7 +20,6 @@ package org.apache.thrift.server;
 
 import org.apache.thrift.TProcessor;
 import org.apache.thrift.protocol.TProtocolFactory;
-import org.apache.thrift.server.THsHaServer.Args;
 import org.apache.thrift.transport.TNonblockingServerSocket;
 
 public class TestHsHaServer extends TestNonblockingServer {

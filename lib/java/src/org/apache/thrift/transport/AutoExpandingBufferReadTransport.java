@@ -18,7 +18,8 @@
  */
 package org.apache.thrift.transport;
 
-import org.apache.commons.lang.NotImplementedException;
+
+import org.apache.commons.lang3.NotImplementedException;
 
 /**
  * TTransport for reading from an AutoExpandingBuffer.
