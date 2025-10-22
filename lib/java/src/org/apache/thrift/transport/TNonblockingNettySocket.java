@@ -2,7 +2,7 @@ package org.apache.thrift.transport;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.List;
+
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -11,25 +11,24 @@ import java.util.concurrent.atomic.AtomicInteger;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
-import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.handler.codec.ByteToMessageDecoder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class TNonblockingNettySocket extends TNonblockingTransport {
     private static final Logger LOGGER = LoggerFactory.getLogger(TNonblockingNettySocket.class);
 
-	private String host;
-	private int port;
+	private final String host;
+	private final int port;
 	private int timeout;
 	private TNonblockingMessageListener listener;
 	private Channel channel;
-	private EventLoopGroup eventLoopGroup = new NioEventLoopGroup();
-	private Bootstrap bootstrap = new Bootstrap();
+	private final EventLoopGroup eventLoopGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
+	private final Bootstrap bootstrap = new Bootstrap();
 	private static final ScheduledExecutorService timeoutService = Executors.newScheduledThreadPool( 1 );
-	private AtomicInteger connectTriedTimes = new AtomicInteger(0);
+	private final AtomicInteger connectTriedTimes = new AtomicInteger(0);
 	
 	public TNonblockingNettySocket( String host, int port) {
 		this( host, port, 0 );
@@ -120,28 +119,27 @@ public class TNonblockingNettySocket extends TNonblockingTransport {
 	
 	private void reconnect() {
 
-        timeoutService.schedule(() -> doConnect(), 5, TimeUnit.SECONDS);
+        timeoutService.schedule(this::doConnect, 5, TimeUnit.SECONDS);
     }
 
     private void doConnect() {
-        LOGGER.info( "start to connect to server " + host + ":" + port );
+        LOGGER.info("start to connect to server {}:{}", host, port);
 		bootstrap.connect( host, port ).addListener( new ChannelFutureListener() {
 
 			@Override
 			public void operationComplete(ChannelFuture cf ) throws Exception {
 				if( cf.isSuccess() ) {
-				    LOGGER.info( "Successful connect to " + cf.channel().remoteAddress());
+                    LOGGER.info("Successful connect to {}", cf.channel().remoteAddress());
 					TNonblockingNettySocket.this.channel = cf.channel();
 					cf.channel().closeFuture().addListener( new ChannelFutureListener() {
 						@Override
 						public void operationComplete(ChannelFuture arg0) throws Exception {
-                            LOGGER.error( "Connection is lost to " + arg0.channel().remoteAddress());
+                            LOGGER.error("Connection is lost to {}", arg0.channel().remoteAddress());
 							reconnect();
 						}
 						
 					});
 				} else {//reconnect
-                    LOGGER.error( "Fail to connect to server " + host + ":" + port );
 					reconnect();
 				}
                 connectTriedTimes.incrementAndGet();
@@ -170,7 +168,7 @@ public class TNonblockingNettySocket extends TNonblockingTransport {
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-            LOGGER.error( "connection to server " + ctx.channel().remoteAddress() + " is broken");
+            LOGGER.error("connection to server {} is broken", ctx.channel().remoteAddress());
         }
     }
 

@@ -4,7 +4,7 @@ package org.apache.thrift.transport;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
-import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 
@@ -18,10 +18,10 @@ import org.slf4j.LoggerFactory;
 public class TNonblockingNettyServerSocket extends TNonblockingServerTransport {
     private static final Logger LOGGER = LoggerFactory.getLogger(TNonblockingNettyServerSocket.class);
 
-	private EventLoopGroup bossGroup = new NioEventLoopGroup();
-	private EventLoopGroup workerGroup = new NioEventLoopGroup();
-	private ServerBootstrap bootstrap = new ServerBootstrap();
-	private InetSocketAddress bindAddr;
+	private final EventLoopGroup bossGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
+	private final EventLoopGroup workerGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
+	private final ServerBootstrap bootstrap = new ServerBootstrap();
+	private final InetSocketAddress bindAddr;
 	private TransportAcceptCallback acceptCallback;
     private ConcurrentHashMap<Channel, ClientTransport> clients = new ConcurrentHashMap<>();
 	/**
@@ -109,7 +109,7 @@ public class TNonblockingNettyServerSocket extends TNonblockingServerTransport {
 	}
 
 
-	private class ClientTransport extends TNonblockingTransport {
+	private static class ClientTransport extends TNonblockingTransport {
 	        private Channel channel;
             private StoreForwardMessageListener listener = new StoreForwardMessageListener( this );
 
